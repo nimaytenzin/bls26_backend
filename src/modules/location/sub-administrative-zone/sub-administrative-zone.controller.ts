@@ -168,6 +168,17 @@ export class SubAdministrativeZoneController {
   }
 
   /**
+   * Get single sub-administrative zone as GeoJSON
+   * @access Public
+   * @param id - Sub-administrative zone ID
+   * @returns GeoJSON Feature
+   */
+  @Get('geojson/:id')
+  async findOneAsGeoJson(@Param('id') id: string) {
+    return this.subAdministrativeZoneService.findOneAsGeoJson(+id);
+  }
+
+  /**
    * Get single sub-administrative zone by ID
    * @param id - Sub-administrative zone ID
    * @param withoutGeom - Exclude geometry data (default: false)

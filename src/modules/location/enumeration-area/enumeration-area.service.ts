@@ -265,6 +265,24 @@ export class EnumerationAreaService {
     return data[0][0].jsonb_build_object;
   }
 
+  async findOneAsGeoJson(id: number): Promise<any> {
+    const data: any = await this.enumerationAreaRepository.sequelize.query(
+      `SELECT jsonb_build_object(
+        'type',       'Feature',
+        'id',         inputs.id,
+        'geometry',   ST_AsGeoJSON(geom)::jsonb,
+        'properties', to_jsonb(inputs) - 'geom'
+      ) AS feature
+      FROM (SELECT * FROM "EnumerationAreas" WHERE id = ${id}) inputs;`,
+    );
+
+    if (!data[0] || !data[0][0] || !data[0][0].feature) {
+      throw new Error(`Enumeration area with ID ${id} not found`);
+    }
+
+    return data[0][0].feature;
+  }
+
   async update(id: number, updateEnumerationAreaDto: UpdateEnumerationAreaDto) {
     const [numRows, updatedRows] = await this.enumerationAreaRepository.update(
       instanceToPlain(updateEnumerationAreaDto),

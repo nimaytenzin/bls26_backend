@@ -75,6 +75,17 @@ export class EnumerationAreaController {
   }
 
   /**
+   * Get single enumeration area as GeoJSON
+   * @access Public
+   * @param id - Enumeration Area ID
+   * @returns GeoJSON Feature
+   */
+  @Get('geojson/:id')
+  async findOneAsGeoJson(@Param('id') id: string) {
+    return this.enumerationAreaService.findOneAsGeoJson(+id);
+  }
+
+  /**
    * Get single enumeration area by ID
    * @access Public
    * @param id - Enumeration Area ID

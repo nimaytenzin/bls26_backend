@@ -14,6 +14,8 @@ import { User } from 'src/modules/auth/entities/user.entity';
 import { CurrentHouseholdListing } from 'src/modules/household-listings/current-household-listing/entities/current-household-listing.entity';
 import { Survey } from 'src/modules/survey/survey/entities/survey.entity';
 import { SurveyEnumerationArea } from 'src/modules/survey/survey/entities/survey-enumeration-area.entity';
+import { Building } from 'src/modules/buildings/entities/building.entity';
+import { HistoricalHouseholdListing } from 'src/modules/household-listings/historical-household-listing/entities/historical-household-listing.entity';
 
 export const databaseProviders = [
   {
@@ -42,8 +44,11 @@ export const databaseProviders = [
         SubAdministrativeZone,
         EnumerationArea,
         CurrentHouseholdListing,
+        HistoricalHouseholdListing,
         Survey,
         SurveyEnumerationArea,
+
+        Building,
       ]);
 
       await sequelize.sync();

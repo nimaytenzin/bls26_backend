@@ -150,6 +150,25 @@ export class SubAdministrativeZoneService {
     return data[0][0].jsonb_build_object;
   }
 
+  async findOneAsGeoJson(id: number): Promise<any> {
+    const data: any =
+      await this.subAdministrativeZoneRepository.sequelize.query(
+        `SELECT jsonb_build_object(
+          'type',       'Feature',
+          'id',         inputs.id,
+          'geometry',   ST_AsGeoJSON(geom)::jsonb,
+          'properties', to_jsonb(inputs) - 'geom'
+        ) AS feature
+        FROM (SELECT * FROM "SubAdministrativeZones" WHERE id = ${id}) inputs;`,
+      );
+
+    if (!data[0] || !data[0][0] || !data[0][0].feature) {
+      throw new Error(`Sub-administrative zone with ID ${id} not found`);
+    }
+
+    return data[0][0].feature;
+  }
+
   async update(
     id: number,
     updateSubAdministrativeZoneDto: UpdateSubAdministrativeZoneDto,

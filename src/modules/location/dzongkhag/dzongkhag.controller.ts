@@ -86,8 +86,19 @@ export class DzongkhagController {
    * GET /dzongkhag/1/enumeration-areas?includeHierarchy=false (flat list)
    */
   @Get(':id/enumeration-areas')
-  async getEnumerationAreasByDzongkhag(@Param('id') id: string) {
-    return this.dzongkhagService.getEnumerationAreasByDzongkhag(+id);
+  async getEnumerationAreasByDzongkhag(
+    @Param('id') id: string,
+    @Query('withGeom') withGeom?: string,
+    @Query('includeHierarchy') includeHierarchy?: string,
+  ) {
+    const includeGeom = withGeom === 'true';
+    const includeFullHierarchy = includeHierarchy !== 'false'; // default true
+
+    return this.dzongkhagService.getEnumerationAreasByDzongkhag(
+      +id,
+      includeGeom,
+      includeFullHierarchy,
+    );
   }
 
   /**

@@ -8,8 +8,10 @@ import { SubAdministrativeZoneModule } from './modules/location/sub-administrati
 import { EnumerationAreaModule } from './modules/location/enumeration-area/enumeration-area.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CurrentHouseholdListingModule } from './modules/household-listings/current-household-listing/current-household-listing.module';
+import { HistoricalHouseholdListingModule } from './modules/household-listings/historical-household-listing/historical-household-listing.module';
 import { SurveyModule } from './modules/survey/survey/survey.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { BuildingsModule } from './modules/buildings/buildings.module';
 
 @Module({
   imports: [
@@ -19,7 +21,9 @@ import { ReportsModule } from './modules/reports/reports.module';
     AdministrativeZoneModule,
     SubAdministrativeZoneModule,
     EnumerationAreaModule,
+    BuildingsModule,
     CurrentHouseholdListingModule,
+    HistoricalHouseholdListingModule,
     SurveyModule,
     ReportsModule,
   ],
