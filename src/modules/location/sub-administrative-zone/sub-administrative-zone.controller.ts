@@ -19,10 +19,10 @@ import { SubAdministrativeZoneService } from './sub-administrative-zone.service'
 import { CreateSubAdministrativeZoneDto } from './dto/create-sub-administrative-zone.dto';
 import { CreateSubAdministrativeZoneGeoJsonDto } from './dto/create-sub-administrative-zone-geojson.dto';
 import { UpdateSubAdministrativeZoneDto } from './dto/update-sub-administrative-zone.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { UserRole } from '../auth/entities/user.entity';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 
 @Controller('sub-administrative-zone')
 export class SubAdministrativeZoneController {
@@ -167,15 +167,33 @@ export class SubAdministrativeZoneController {
     return this.subAdministrativeZoneService.findAllAsGeoJson();
   }
 
+  /**
+   * Get single sub-administrative zone by ID
+   * @param id - Sub-administrative zone ID
+   * @param withoutGeom - Exclude geometry data (default: false)
+   * @param includeEnumerationAreas - Include enumeration areas (default: false)
+   *
+   * @example
+   * GET /sub-administrative-zone/1
+   * GET /sub-administrative-zone/1?withoutGeom=true
+   * GET /sub-administrative-zone/1?includeEnumerationAreas=true
+   * GET /sub-administrative-zone/1?withoutGeom=true&includeEnumerationAreas=true
+   */
   @Get(':id')
   async findOne(
     @Param('id') id: string,
     @Query('withoutGeom') withoutGeom?: string,
+    @Query('includeEnumerationAreas') includeEnumerationAreas?: string,
   ) {
+    const includeEAs = includeEnumerationAreas === 'true';
+
     if (withoutGeom === 'true') {
-      return this.subAdministrativeZoneService.findOneWithoutGeom(+id);
+      return this.subAdministrativeZoneService.findOneWithoutGeom(
+        +id,
+        includeEAs,
+      );
     }
-    return this.subAdministrativeZoneService.findOne(+id);
+    return this.subAdministrativeZoneService.findOne(+id, includeEAs);
   }
 
   @Patch(':id')

@@ -6,10 +6,10 @@ import {
   SEQUELIZE,
   TEST,
 } from 'src/constants/constants';
-import { Dzongkhag } from 'src/modules/dzongkhag/entities/dzongkhag.entity';
-import { AdministrativeZone } from 'src/modules/administrative-zone/entities/administrative-zone.entity';
-import { SubAdministrativeZone } from 'src/modules/sub-administrative-zone/entities/sub-administrative-zone.entity';
-import { EnumerationArea } from 'src/modules/enumeration-area/entities/enumeration-area.entity';
+import { Dzongkhag } from 'src/modules/location/dzongkhag/entities/dzongkhag.entity';
+import { AdministrativeZone } from 'src/modules/location/administrative-zone/entities/administrative-zone.entity';
+import { SubAdministrativeZone } from 'src/modules/location/sub-administrative-zone/entities/sub-administrative-zone.entity';
+import { EnumerationArea } from 'src/modules/location/enumeration-area/entities/enumeration-area.entity';
 import { User } from 'src/modules/auth/entities/user.entity';
 import { CurrentHouseholdListing } from 'src/modules/household-listings/current-household-listing/entities/current-household-listing.entity';
 import { Survey } from 'src/modules/survey/survey/entities/survey.entity';

@@ -19,16 +19,90 @@ import { EnumerationAreaService } from './enumeration-area.service';
 import { CreateEnumerationAreaDto } from './dto/create-enumeration-area.dto';
 import { CreateEnumerationAreaGeoJsonDto } from './dto/create-enumeration-area-geojson.dto';
 import { UpdateEnumerationAreaDto } from './dto/update-enumeration-area.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { UserRole } from '../auth/entities/user.entity';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 
 @Controller('enumeration-area')
 export class EnumerationAreaController {
   constructor(
     private readonly enumerationAreaService: EnumerationAreaService,
   ) {}
+
+  // ============ PUBLIC ROUTES (Read-only) ============
+
+  /**
+   * Get all enumeration areas
+   * @access Public
+   * @query withGeom - Include geometry (default: false)
+   * @query subAdministrativeZoneId - Filter by sub-administrative zone
+   * @query includeSubAdminZone - Include parent sub-administrative zone (default: false)
+   *
+   * @example
+   * GET /enumeration-area
+   * GET /enumeration-area?withGeom=true
+   * GET /enumeration-area?subAdministrativeZoneId=1
+   * GET /enumeration-area?includeSubAdminZone=true
+   */
+  @Get()
+  async findAll(
+    @Query('withGeom') withGeom?: string,
+    @Query('subAdministrativeZoneId') subAdministrativeZoneId?: string,
+    @Query('includeSubAdminZone') includeSubAdminZone?: string,
+  ) {
+    const includeGeom = withGeom === 'true';
+    const includeSubAdmin = includeSubAdminZone === 'true';
+
+    if (subAdministrativeZoneId) {
+      return this.enumerationAreaService.findBySubAdministrativeZone(
+        +subAdministrativeZoneId,
+        includeGeom,
+        includeSubAdmin,
+      );
+    }
+    return this.enumerationAreaService.findAll(includeGeom, includeSubAdmin);
+  }
+
+  /**
+   * Get all enumeration areas as GeoJSON
+   * @access Public
+   * @returns GeoJSON FeatureCollection
+   */
+  @Get('geojson/all')
+  async findAllAsGeoJson() {
+    return this.enumerationAreaService.findAllAsGeoJson();
+  }
+
+  /**
+   * Get single enumeration area by ID
+   * @access Public
+   * @param id - Enumeration Area ID
+   * @query withGeom - Include geometry (default: false)
+   * @query includeSubAdminZone - Include parent sub-administrative zone (default: false)
+   *
+   * @example
+   * GET /enumeration-area/1
+   * GET /enumeration-area/1?withGeom=true
+   * GET /enumeration-area/1?includeSubAdminZone=true
+   */
+  @Get(':id')
+  async findOne(
+    @Param('id') id: string,
+    @Query('withGeom') withGeom?: string,
+    @Query('includeSubAdminZone') includeSubAdminZone?: string,
+  ) {
+    const includeGeom = withGeom === 'true';
+    const includeSubAdmin = includeSubAdminZone === 'true';
+
+    return this.enumerationAreaService.findOne(
+      +id,
+      includeGeom,
+      includeSubAdmin,
+    );
+  }
+
+  // ============ AADMIN ROUTES (Protected) ============
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -186,18 +260,6 @@ export class EnumerationAreaController {
     }
   }
 
-  @Get()
-  async findAll(
-    @Query('subAdministrativeZoneId') subAdministrativeZoneId?: string,
-  ) {
-    if (subAdministrativeZoneId) {
-      return this.enumerationAreaService.findBySubAdministrativeZone(
-        +subAdministrativeZoneId,
-      );
-    }
-    return this.enumerationAreaService.findAll();
-  }
-
   @Get('by-sub-administrative-zone/:subAdministrativeZoneId')
   async findBySubAdministrativeZone(
     @Param('subAdministrativeZoneId') subAdministrativeZoneId: string,
@@ -214,16 +276,6 @@ export class EnumerationAreaController {
     return this.enumerationAreaService.findAllAsGeoJsonBySubAdministrativeZone(
       +subAdministrativeZoneId,
     );
-  }
-
-  @Get('geojson/all')
-  async findAllAsGeoJson() {
-    return this.enumerationAreaService.findAllAsGeoJson();
-  }
-
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.enumerationAreaService.findOne(+id);
   }
 
   @Patch(':id')

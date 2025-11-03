@@ -5,7 +5,7 @@ import {
   Table,
   BelongsToMany,
 } from 'sequelize-typescript';
-import { EnumerationArea } from '../../../enumeration-area/entities/enumeration-area.entity';
+import { EnumerationArea } from '../../../location/enumeration-area/entities/enumeration-area.entity';
 import { SurveyEnumerationArea } from './survey-enumeration-area.entity';
 
 export enum SurveyStatus {

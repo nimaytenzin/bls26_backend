@@ -5,6 +5,9 @@ import { UpdateSubAdministrativeZoneDto } from './dto/update-sub-administrative-
 import { CreateSubAdministrativeZoneGeoJsonDto } from './dto/create-sub-administrative-zone-geojson.dto';
 import { instanceToPlain } from 'class-transformer';
 import { Sequelize } from 'sequelize';
+import { AdministrativeZone } from '../administrative-zone/entities/administrative-zone.entity';
+import { Dzongkhag } from '../dzongkhag/entities/dzongkhag.entity';
+import { EnumerationArea } from '../enumeration-area/entities/enumeration-area.entity';
 
 @Injectable()
 export class SubAdministrativeZoneService {
@@ -49,25 +52,45 @@ export class SubAdministrativeZoneService {
     );
   }
 
-  async findOne(id: number): Promise<SubAdministrativeZone> {
-    return await this.subAdministrativeZoneRepository.findOne<SubAdministrativeZone>(
-      {
-        where: { id },
-        include: ['administrativeZone'],
-      },
-    );
-  }
-
-  async findOneWithoutGeom(id: number): Promise<SubAdministrativeZone> {
+  async findOne(
+    id: number,
+    includeEnumerationAreas = false,
+  ): Promise<SubAdministrativeZone> {
     return await this.subAdministrativeZoneRepository.findOne<SubAdministrativeZone>(
       {
         where: { id },
         include: [
           {
-            association: 'administrativeZone',
-            include: ['dzongkhag'],
+            model: AdministrativeZone,
+            include: [{ model: Dzongkhag }],
+          },
+          {
+            model: EnumerationArea,
           },
         ],
+      },
+    );
+  }
+
+  async findOneWithoutGeom(
+    id: number,
+    includeEnumerationAreas = false,
+  ): Promise<SubAdministrativeZone> {
+    const includeOptions: any[] = [
+      {
+        association: 'administrativeZone',
+        include: ['dzongkhag'],
+      },
+    ];
+
+    if (includeEnumerationAreas) {
+      includeOptions.push('enumerationAreas');
+    }
+
+    return await this.subAdministrativeZoneRepository.findOne<SubAdministrativeZone>(
+      {
+        where: { id },
+        include: includeOptions,
         attributes: { exclude: ['geom'] },
       },
     );

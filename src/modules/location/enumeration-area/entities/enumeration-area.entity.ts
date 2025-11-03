@@ -9,9 +9,9 @@ import {
   BelongsToMany,
 } from 'sequelize-typescript';
 import { SubAdministrativeZone } from '../../sub-administrative-zone/entities/sub-administrative-zone.entity';
-import { CurrentHouseholdListing } from '../../household-listings/current-household-listing/entities/current-household-listing.entity';
-import { Survey } from '../../survey/survey/entities/survey.entity';
-import { SurveyEnumerationArea } from '../../survey/survey/entities/survey-enumeration-area.entity';
+import { CurrentHouseholdListing } from '../../../household-listings/current-household-listing/entities/current-household-listing.entity';
+import { Survey } from '../../../survey/survey/entities/survey.entity';
+import { SurveyEnumerationArea } from '../../../survey/survey/entities/survey-enumeration-area.entity';
 
 @Table({
   timestamps: false,

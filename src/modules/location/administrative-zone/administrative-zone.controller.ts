@@ -15,10 +15,10 @@ import { AdministrativeZoneService } from './administrative-zone.service';
 import { CreateAdministrativeZoneDto } from './dto/create-administrative-zone.dto';
 import { CreateAdministrativeZoneGeoJsonDto } from './dto/create-administrative-zone-geojson.dto';
 import { UpdateAdministrativeZoneDto } from './dto/update-administrative-zone.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { UserRole } from '../auth/entities/user.entity';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/entities/user.entity';
 
 @Controller('administrative-zone')
 export class AdministrativeZoneController {

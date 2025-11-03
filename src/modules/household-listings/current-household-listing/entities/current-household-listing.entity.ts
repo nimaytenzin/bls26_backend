@@ -6,7 +6,7 @@ import {
   ForeignKey,
   BelongsTo,
 } from 'sequelize-typescript';
-import { EnumerationArea } from '../../../enumeration-area/entities/enumeration-area.entity';
+import { EnumerationArea } from '../../../location/enumeration-area/entities/enumeration-area.entity';
 
 @Table({
   timestamps: true,

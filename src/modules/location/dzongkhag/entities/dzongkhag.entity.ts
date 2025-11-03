@@ -1,5 +1,5 @@
 import { Column, DataType, Model, Table, HasMany } from 'sequelize-typescript';
-import { AdministrativeZone } from 'src/modules/administrative-zone/entities/administrative-zone.entity';
+import { AdministrativeZone } from 'src/modules/location/administrative-zone/entities/administrative-zone.entity';
 
 @Table({
   timestamps: false,

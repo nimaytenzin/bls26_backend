@@ -136,25 +136,91 @@ export class EnumerationAreaService {
     };
   }
 
-  async findAll(): Promise<EnumerationArea[]> {
-    return await this.enumerationAreaRepository.findAll<EnumerationArea>({
-      include: ['subAdministrativeZone'],
-    });
+  /**
+   * Find all enumeration areas with optional associations
+   * @param withGeom - Include geometry (default: false)
+   * @param includeSubAdminZone - Include parent sub-administrative zone (default: false)
+   */
+  async findAll(
+    withGeom = false,
+    includeSubAdminZone = false,
+  ): Promise<EnumerationArea[]> {
+    const options: any = {
+      attributes: withGeom ? undefined : { exclude: ['geom'] },
+    };
+
+    if (includeSubAdminZone) {
+      options.include = [
+        {
+          association: 'subAdministrativeZone',
+          attributes: { exclude: withGeom ? [] : ['geom'] },
+        },
+      ];
+    }
+
+    return await this.enumerationAreaRepository.findAll<EnumerationArea>(
+      options,
+    );
   }
 
-  async findOne(id: number): Promise<EnumerationArea> {
-    return await this.enumerationAreaRepository.findOne<EnumerationArea>({
+  /**
+   * Find single enumeration area by ID with optional associations
+   * @param id - Enumeration Area ID
+   * @param withGeom - Include geometry (default: false)
+   * @param includeSubAdminZone - Include parent sub-administrative zone (default: false)
+   */
+  async findOne(
+    id: number,
+    withGeom = false,
+    includeSubAdminZone = false,
+  ): Promise<EnumerationArea> {
+    const options: any = {
       where: { id },
-      include: ['subAdministrativeZone'],
-    });
+      attributes: withGeom ? undefined : { exclude: ['geom'] },
+    };
+
+    if (includeSubAdminZone) {
+      options.include = [
+        {
+          association: 'subAdministrativeZone',
+          attributes: { exclude: withGeom ? [] : ['geom'] },
+        },
+      ];
+    }
+
+    return await this.enumerationAreaRepository.findOne<EnumerationArea>(
+      options,
+    );
   }
 
+  /**
+   * Find enumeration areas by sub-administrative zone with optional associations
+   * @param subAdministrativeZoneId - Sub-Administrative Zone ID
+   * @param withGeom - Include geometry (default: false)
+   * @param includeSubAdminZone - Include parent sub-administrative zone (default: false)
+   */
   async findBySubAdministrativeZone(
     subAdministrativeZoneId: number,
+    withGeom = false,
+    includeSubAdminZone = false,
   ): Promise<EnumerationArea[]> {
-    return await this.enumerationAreaRepository.findAll<EnumerationArea>({
+    const options: any = {
       where: { subAdministrativeZoneId },
-    });
+      attributes: withGeom ? undefined : { exclude: ['geom'] },
+    };
+
+    if (includeSubAdminZone) {
+      options.include = [
+        {
+          association: 'subAdministrativeZone',
+          attributes: { exclude: withGeom ? [] : ['geom'] },
+        },
+      ];
+    }
+
+    return await this.enumerationAreaRepository.findAll<EnumerationArea>(
+      options,
+    );
   }
 
   async findAllAsGeoJsonBySubAdministrativeZone(

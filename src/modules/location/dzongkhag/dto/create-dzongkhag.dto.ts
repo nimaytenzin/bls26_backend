@@ -5,7 +5,7 @@ import {
   IsNumber,
   IsObject,
 } from 'class-validator';
-import { IsValidWGS84GeoJSON } from '../../validators/geojson.validator';
+import { IsValidWGS84GeoJSON } from '../../../validators/geojson.validator';
 
 export class CreateDzongkhagDto {
   @IsNotEmpty()

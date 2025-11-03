@@ -8,7 +8,7 @@ import {
   HasMany,
 } from 'sequelize-typescript';
 import { Dzongkhag } from '../../dzongkhag/entities/dzongkhag.entity';
-import { SubAdministrativeZone } from 'src/modules/sub-administrative-zone/entities/sub-administrative-zone.entity';
+import { SubAdministrativeZone } from 'src/modules/location/sub-administrative-zone/entities/sub-administrative-zone.entity';
 
 export enum AdministrativeZoneType {
   GEWOG = 'Gewog',

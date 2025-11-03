@@ -6,7 +6,7 @@ import {
   Table,
 } from 'sequelize-typescript';
 import { Survey } from './survey.entity';
-import { EnumerationArea } from '../../../enumeration-area/entities/enumeration-area.entity';
+import { EnumerationArea } from '../../../location/enumeration-area/entities/enumeration-area.entity';
 
 @Table({
   timestamps: false,
