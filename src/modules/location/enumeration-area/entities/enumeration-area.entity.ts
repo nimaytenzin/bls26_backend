@@ -9,9 +9,9 @@ import {
   BelongsToMany,
 } from 'sequelize-typescript';
 import { SubAdministrativeZone } from '../../sub-administrative-zone/entities/sub-administrative-zone.entity';
-import { CurrentHouseholdListing } from '../../../household-listings/current-household-listing/entities/current-household-listing.entity';
 import { Survey } from '../../../survey/survey/entities/survey.entity';
-import { SurveyEnumerationArea } from '../../../survey/survey/entities/survey-enumeration-area.entity';
+import { SurveyEnumerationArea } from 'src/modules/survey/survey-enumeration-area/entities/survey-enumeration-area.entity';
+import { EAAnnualStats } from '../../../annual statistics/ea-annual-statistics/entities/ea-annual-stats.entity';
 
 @Table({
   timestamps: false,
@@ -63,9 +63,12 @@ export class EnumerationArea extends Model {
   @BelongsTo(() => SubAdministrativeZone)
   subAdministrativeZone: SubAdministrativeZone;
 
-  @HasMany(() => CurrentHouseholdListing)
-  currentHouseholdListings: CurrentHouseholdListing[];
-
   @BelongsToMany(() => Survey, () => SurveyEnumerationArea)
   surveys: Survey[];
+
+  @HasMany(() => SurveyEnumerationArea)
+  surveyEnumerationAreas: SurveyEnumerationArea[];
+
+  @HasMany(() => EAAnnualStats)
+  annualStats: EAAnnualStats[];
 }

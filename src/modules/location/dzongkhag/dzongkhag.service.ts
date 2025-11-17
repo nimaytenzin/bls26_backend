@@ -85,6 +85,163 @@ export class DzongkhagService {
     return data[0][0].jsonb_build_object;
   }
 
+  async findOneAsGeoJson(id: number): Promise<any> {
+    const data: any = await this.dzongkhagRepository.sequelize.query(
+      `SELECT jsonb_build_object(
+        'type',       'Feature',
+        'id',         inputs.id,
+        'geometry',   ST_AsGeoJSON(geom)::jsonb,
+        'properties', to_jsonb(inputs) - 'geom'
+      ) AS feature
+      FROM (SELECT * FROM "Dzongkhags" WHERE id = ${id}) inputs;`,
+    );
+
+    if (!data[0] || !data[0][0] || !data[0][0].feature) {
+      throw new Error(`Dzongkhag with ID ${id} not found`);
+    }
+
+    return data[0][0].feature;
+  }
+
+  /**
+   * Get all administrative zones for a dzongkhag
+   * @param dzongkhagId - Dzongkhag ID
+   * @param withGeom - Include geometry
+   * @param includeSubAdminZones - Include sub-administrative zones
+   * @param includeEAs - Include enumeration areas
+   */
+  async getAdministrativeZonesByDzongkhag(
+    dzongkhagId: number,
+    withGeom = false,
+    includeSubAdminZones = false,
+    includeEAs = false,
+  ): Promise<AdministrativeZone[]> {
+    const options: any = {
+      where: { dzongkhagId },
+      attributes: withGeom ? undefined : { exclude: ['geom'] },
+    };
+
+    if (includeSubAdminZones) {
+      const subAdminInclude: any = {
+        model: SubAdministrativeZone,
+        as: 'subAdministrativeZones',
+        attributes: { exclude: withGeom ? [] : ['geom'] },
+      };
+
+      if (includeEAs) {
+        subAdminInclude.include = [
+          {
+            model: EnumerationArea,
+            as: 'enumerationAreas',
+            attributes: { exclude: withGeom ? [] : ['geom'] },
+          },
+        ];
+      }
+
+      options.include = [subAdminInclude];
+    }
+
+    return await AdministrativeZone.findAll(options);
+  }
+
+  /**
+   * Get all sub-administrative zones for a dzongkhag
+   * @param dzongkhagId - Dzongkhag ID
+   * @param withGeom - Include geometry
+   * @param includeEAs - Include enumeration areas
+   */
+  async getSubAdministrativeZonesByDzongkhag(
+    dzongkhagId: number,
+    withGeom = false,
+    includeEAs = false,
+  ): Promise<SubAdministrativeZone[]> {
+    const options: any = {
+      attributes: withGeom ? undefined : { exclude: ['geom'] },
+      include: [
+        {
+          model: AdministrativeZone,
+          where: { dzongkhagId },
+          attributes: { exclude: ['geom'] },
+        },
+      ],
+    };
+
+    if (includeEAs) {
+      options.include.push({
+        model: EnumerationArea,
+        as: 'enumerationAreas',
+        attributes: { exclude: withGeom ? [] : ['geom'] },
+      });
+    }
+
+    return await SubAdministrativeZone.findAll(options);
+  }
+
+  /**
+   * Get all sub-administrative zones for a dzongkhag as GeoJSON
+   * @param dzongkhagId - Dzongkhag ID
+   */
+  async getSubAdministrativeZonesGeoJsonByDzongkhag(
+    dzongkhagId: number,
+  ): Promise<any> {
+    const data: any = await this.dzongkhagRepository.sequelize.query(
+      `SELECT jsonb_build_object(
+        'type',     'FeatureCollection',
+        'features', jsonb_agg(features.feature)
+      )
+      FROM (
+        SELECT jsonb_build_object(
+          'type',       'Feature',
+          'id',         inputs.id,
+          'geometry',   ST_AsGeoJSON(inputs.geom)::jsonb,
+          'properties', to_jsonb(inputs) - 'geom'
+        ) AS feature
+        FROM (
+          SELECT saz.* 
+          FROM "SubAdministrativeZones" saz
+          JOIN "AdministrativeZones" az ON saz."administrativeZoneId" = az.id
+          WHERE az."dzongkhagId" = ${dzongkhagId}
+          ORDER BY saz.id
+        ) inputs
+      ) features;`,
+    );
+
+    return data[0][0].jsonb_build_object;
+  }
+
+  /**
+   * Get all enumeration areas for a dzongkhag as GeoJSON
+   * @param dzongkhagId - Dzongkhag ID
+   */
+  async getEnumerationAreasGeoJsonByDzongkhag(
+    dzongkhagId: number,
+  ): Promise<any> {
+    const data: any = await this.dzongkhagRepository.sequelize.query(
+      `SELECT jsonb_build_object(
+        'type',     'FeatureCollection',
+        'features', jsonb_agg(features.feature)
+      )
+      FROM (
+        SELECT jsonb_build_object(
+          'type',       'Feature',
+          'id',         inputs.id,
+          'geometry',   ST_AsGeoJSON(inputs.geom)::jsonb,
+          'properties', to_jsonb(inputs) - 'geom'
+        ) AS feature
+        FROM (
+          SELECT ea.* 
+          FROM "EnumerationAreas" ea
+          JOIN "SubAdministrativeZones" saz ON ea."subAdministrativeZoneId" = saz.id
+          JOIN "AdministrativeZones" az ON saz."administrativeZoneId" = az.id
+          WHERE az."dzongkhagId" = ${dzongkhagId}
+          ORDER BY ea.id
+        ) inputs
+      ) features;`,
+    );
+
+    return data[0][0].jsonb_build_object;
+  }
+
   async findOne(
     id: number,
     withGeom: boolean = false,

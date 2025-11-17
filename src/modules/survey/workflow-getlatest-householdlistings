@@ -1,0 +1,50 @@
+flowchart TD
+    Start([Request: Get Current Household Listings<br/>by Enumeration Area ID]) --> FindSurveys
+
+    FindSurveys[Find all surveys containing<br/>this enumeration area] --> HasSurveys{Surveys<br/>found?}
+    
+    HasSurveys -->|No| NoData[Return: NO_DATA<br/>No surveys available for<br/>this enumeration area]
+    
+    HasSurveys -->|Yes| OrderSurveys[Order surveys by year/date<br/>DESC - newest first]
+    
+    OrderSurveys --> LoopStart{More surveys<br/>to check?}
+    
+    LoopStart -->|No| NoneValidated[Return: NO_DATA<br/>All surveys checked,<br/>none have validated data]
+    
+    LoopStart -->|Yes| GetSurveyEA[Get Survey Enumeration Area<br/>for current survey]
+    
+    GetSurveyEA --> CheckValidation{Validation<br/>status?}
+    
+    CheckValidation -->|isValidated = true| GetHouseholds[Fetch household listings<br/>for this survey EA]
+    
+    CheckValidation -->|isSubmitted = true<br/>isValidated = false| SkipPending[Skip: Data pending validation<br/>Continue to next survey]
+    
+    CheckValidation -->|isSubmitted = false| SkipNotSubmitted[Skip: Data not submitted<br/>Continue to next survey]
+    
+    SkipPending --> LoopStart
+    SkipNotSubmitted --> LoopStart
+    
+    GetHouseholds --> HasHouseholds{Household<br/>listings exist?}
+    
+    HasHouseholds -->|No| EmptyValidated[Return: VALIDATED_BUT_EMPTY<br/>Survey validated but<br/>no household data]
+    
+    HasHouseholds -->|Yes| CalcStats[Calculate statistics:<br/>- Total households<br/>- Total population<br/>- Male/Female counts]
+    
+    CalcStats --> Success[Return: SUCCESS<br/>✓ Survey info<br/>✓ EA info<br/>✓ Household listings<br/>✓ Statistics<br/>✓ Validation date]
+    
+    NoData --> End([End])
+    NoneValidated --> End
+    EmptyValidated --> End
+    Success --> End
+
+    %% Styling
+    style Start fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    style Success fill:#c8e6c9,stroke:#2e7d32,stroke-width:2px
+    style NoData fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style NoneValidated fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style EmptyValidated fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    style End fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    style CheckValidation fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style HasSurveys fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style HasHouseholds fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style LoopStart fill:#e8eaf6,stroke:#283593,stroke-width:2px

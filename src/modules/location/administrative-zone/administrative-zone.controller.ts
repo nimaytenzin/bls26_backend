@@ -57,6 +57,7 @@ export class AdministrativeZoneController {
 
   @Get('geojson/by-dzongkhag/:dzongkhagId')
   async findAllAsGeoJsonByDzongkhag(@Param('dzongkhagId') dzongkhagId: string) {
+    console.log('hi');
     return this.administrativeZoneService.findAllAsGeoJsonByDzongkhag(
       +dzongkhagId,
     );

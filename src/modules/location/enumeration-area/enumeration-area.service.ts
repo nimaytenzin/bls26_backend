@@ -5,6 +5,9 @@ import { UpdateEnumerationAreaDto } from './dto/update-enumeration-area.dto';
 import { CreateEnumerationAreaGeoJsonDto } from './dto/create-enumeration-area-geojson.dto';
 import { instanceToPlain } from 'class-transformer';
 import { Sequelize } from 'sequelize';
+import { SubAdministrativeZone } from '../sub-administrative-zone/entities/sub-administrative-zone.entity';
+import { AdministrativeZone } from '../administrative-zone/entities/administrative-zone.entity';
+import { Dzongkhag } from '../dzongkhag/entities/dzongkhag.entity';
 
 @Injectable()
 export class EnumerationAreaService {
@@ -174,23 +177,28 @@ export class EnumerationAreaService {
     withGeom = false,
     includeSubAdminZone = false,
   ): Promise<EnumerationArea> {
-    const options: any = {
+    return await this.enumerationAreaRepository.findOne({
       where: { id },
-      attributes: withGeom ? undefined : { exclude: ['geom'] },
-    };
-
-    if (includeSubAdminZone) {
-      options.include = [
+      attributes: { exclude: ['geom'] },
+      include: [
         {
-          association: 'subAdministrativeZone',
-          attributes: { exclude: withGeom ? [] : ['geom'] },
+          model: SubAdministrativeZone,
+          attributes: { exclude: ['geom'] },
+          include: [
+            {
+              model: AdministrativeZone,
+              attributes: { exclude: ['geom'] },
+              include: [
+                {
+                  model: Dzongkhag,
+                  attributes: { exclude: ['geom'] },
+                },
+              ],
+            },
+          ],
         },
-      ];
-    }
-
-    return await this.enumerationAreaRepository.findOne<EnumerationArea>(
-      options,
-    );
+      ],
+    });
   }
 
   /**

@@ -73,6 +73,100 @@ export class DzongkhagController {
   }
 
   /**
+   * Get single dzongkhag as GeoJSON
+   * @access Public
+   * @param id - Dzongkhag ID
+   * @returns GeoJSON Feature
+   */
+  @Get('geojson/:id')
+  async findOneAsGeoJson(@Param('id') id: string) {
+    return this.dzongkhagService.findOneAsGeoJson(+id);
+  }
+
+  /**
+   * Get all administrative zones by dzongkhag ID
+   * @access Public
+   * @param id - Dzongkhag ID
+   * @query withGeom - Include geometry (default: false)
+   * @query includeSubAdminZones - Include sub-administrative zones (default: false)
+   * @query includeEAs - Include enumeration areas (default: false)
+   *
+   * @example
+   * GET /dzongkhag/1/administrative-zones
+   * GET /dzongkhag/1/administrative-zones?withGeom=true
+   * GET /dzongkhag/1/administrative-zones?includeSubAdminZones=true&includeEAs=true
+   */
+  @Get(':id/administrative-zones')
+  async getAdministrativeZonesByDzongkhag(
+    @Param('id') id: string,
+    @Query('withGeom') withGeom?: string,
+    @Query('includeSubAdminZones') includeSubAdminZones?: string,
+    @Query('includeEAs') includeEAs?: string,
+  ) {
+    const includeGeom = withGeom === 'true';
+    const includeSubAdminZone = includeSubAdminZones === 'true';
+    const includeEA = includeEAs === 'true';
+
+    return this.dzongkhagService.getAdministrativeZonesByDzongkhag(
+      +id,
+      includeGeom,
+      includeSubAdminZone,
+      includeEA,
+    );
+  }
+  /**
+   * Get all sub-administrative zones by dzongkhag ID
+   * @access Public
+   * @param id - Dzongkhag ID
+   * @query withGeom - Include geometry (default: false)
+   * @query includeEAs - Include enumeration areas (default: false)
+   *
+   * @example
+   * GET /dzongkhag/1/sub-administrative-zones
+   * GET /dzongkhag/1/sub-administrative-zones?withGeom=true
+   * GET /dzongkhag/1/sub-administrative-zones?includeEAs=true
+   */
+  @Get(':id/sub-administrative-zones')
+  async getSubAdministrativeZonesByDzongkhag(
+    @Param('id') id: string,
+    @Query('withGeom') withGeom?: string,
+    @Query('includeEAs') includeEAs?: string,
+  ) {
+    const includeGeom = withGeom === 'true';
+    const includeEA = includeEAs === 'true';
+
+    return this.dzongkhagService.getSubAdministrativeZonesByDzongkhag(
+      +id,
+      includeGeom,
+      includeEA,
+    );
+  }
+
+  /**
+   * Get all sub-administrative zones by dzongkhag ID as GeoJSON
+   * @access Public
+   * @param id - Dzongkhag ID
+   * @returns GeoJSON FeatureCollection
+   */
+  @Get(':id/sub-administrative-zones/geojson')
+  async getSubAdministrativeZonesGeoJsonByDzongkhag(@Param('id') id: string) {
+    return this.dzongkhagService.getSubAdministrativeZonesGeoJsonByDzongkhag(
+      +id,
+    );
+  }
+
+  /**
+   * Get all enumeration areas by dzongkhag ID as GeoJSON
+   * @access Public
+   * @param id - Dzongkhag ID
+   * @returns GeoJSON FeatureCollection
+   */
+  @Get(':id/enumeration-areas/geojson')
+  async getEnumerationAreasGeoJsonByDzongkhag(@Param('id') id: string) {
+    return this.dzongkhagService.getEnumerationAreasGeoJsonByDzongkhag(+id);
+  }
+
+  /**
    * Get enumeration areas by dzongkhag with full hierarchy
    * @access Public
    * @param id - Dzongkhag ID

@@ -4,9 +4,10 @@ import {
   Model,
   Table,
   BelongsToMany,
+  HasMany,
 } from 'sequelize-typescript';
 import { EnumerationArea } from '../../../location/enumeration-area/entities/enumeration-area.entity';
-import { SurveyEnumerationArea } from './survey-enumeration-area.entity';
+import { SurveyEnumerationArea } from '../../survey-enumeration-area/entities/survey-enumeration-area.entity';
 
 export enum SurveyStatus {
   ACTIVE = 'ACTIVE',
@@ -66,15 +67,12 @@ export class Survey extends Model {
     allowNull: false,
     defaultValue: false,
   })
-  isSubmitted: boolean;
+  isFullyValidated: boolean;
 
-  @Column({
-    type: DataType.BOOLEAN,
-    allowNull: false,
-    defaultValue: false,
-  })
-  isVerified: boolean;
-
+  // Relationships
   @BelongsToMany(() => EnumerationArea, () => SurveyEnumerationArea)
   enumerationAreas: EnumerationArea[];
+
+  @HasMany(() => SurveyEnumerationArea)
+  surveyEnumerationAreas: SurveyEnumerationArea[];
 }

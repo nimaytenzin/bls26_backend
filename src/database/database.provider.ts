@@ -11,11 +11,16 @@ import { AdministrativeZone } from 'src/modules/location/administrative-zone/ent
 import { SubAdministrativeZone } from 'src/modules/location/sub-administrative-zone/entities/sub-administrative-zone.entity';
 import { EnumerationArea } from 'src/modules/location/enumeration-area/entities/enumeration-area.entity';
 import { User } from 'src/modules/auth/entities/user.entity';
-import { CurrentHouseholdListing } from 'src/modules/household-listings/current-household-listing/entities/current-household-listing.entity';
+import { SupervisorDzongkhag } from 'src/modules/auth/entities/supervisor-dzongkhag.entity';
 import { Survey } from 'src/modules/survey/survey/entities/survey.entity';
-import { SurveyEnumerationArea } from 'src/modules/survey/survey/entities/survey-enumeration-area.entity';
+import { SurveyEnumerationAreaHouseholdListing } from 'src/modules/survey/survey-enumeration-area-household-listing/entities/survey-enumeration-area-household-listing.entity';
+import { SurveyEnumerator } from 'src/modules/survey/survey-enumerator/entities/survey-enumerator.entity';
 import { Building } from 'src/modules/buildings/entities/building.entity';
-import { HistoricalHouseholdListing } from 'src/modules/household-listings/historical-household-listing/entities/historical-household-listing.entity';
+import { SurveyEnumerationArea } from 'src/modules/survey/survey-enumeration-area/entities/survey-enumeration-area.entity';
+import { EAAnnualStats } from 'src/modules/annual statistics/ea-annual-statistics/entities/ea-annual-stats.entity';
+import { SAZAnnualStats } from 'src/modules/annual statistics/sub-administrative-zone-annual-statistics/entities/saz-annual-stats.entity';
+import { AZAnnualStats } from 'src/modules/annual statistics/administrative-zone-annual-statistics/entities/az-annual-stats.entity';
+import { DzongkhagAnnualStats } from 'src/modules/annual statistics/dzongkhag-annual-statistics/entities/dzongkhag-annual-stats.entity';
 
 export const databaseProviders = [
   {
@@ -39,16 +44,21 @@ export const databaseProviders = [
       const sequelize = new Sequelize(config);
       sequelize.addModels([
         User,
+        SupervisorDzongkhag,
         Dzongkhag,
         AdministrativeZone,
         SubAdministrativeZone,
         EnumerationArea,
-        CurrentHouseholdListing,
-        HistoricalHouseholdListing,
+
         Survey,
         SurveyEnumerationArea,
-
+        SurveyEnumerationAreaHouseholdListing,
+        SurveyEnumerator,
         Building,
+        EAAnnualStats,
+        SAZAnnualStats,
+        AZAnnualStats,
+        DzongkhagAnnualStats,
       ]);
 
       await sequelize.sync();

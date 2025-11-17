@@ -1,5 +1,14 @@
-import { Column, DataType, Model, Table, HasMany } from 'sequelize-typescript';
+import {
+  Column,
+  DataType,
+  Model,
+  Table,
+  HasMany,
+  BelongsToMany,
+} from 'sequelize-typescript';
 import { AdministrativeZone } from 'src/modules/location/administrative-zone/entities/administrative-zone.entity';
+import { User } from 'src/modules/auth/entities/user.entity';
+import { SupervisorDzongkhag } from 'src/modules/auth/entities/supervisor-dzongkhag.entity';
 
 @Table({
   timestamps: false,
@@ -37,4 +46,7 @@ export class Dzongkhag extends Model {
 
   @HasMany(() => AdministrativeZone)
   administrativeZones: AdministrativeZone[];
+
+  @BelongsToMany(() => User, () => SupervisorDzongkhag)
+  supervisors: User[];
 }

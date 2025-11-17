@@ -1,4 +1,12 @@
-import { Column, DataType, Model, Table } from 'sequelize-typescript';
+import {
+  Column,
+  DataType,
+  Model,
+  Table,
+  BelongsToMany,
+} from 'sequelize-typescript';
+import { Dzongkhag } from 'src/modules/location/dzongkhag/entities/dzongkhag.entity';
+import { SupervisorDzongkhag } from './supervisor-dzongkhag.entity';
 
 export enum UserRole {
   ADMIN = 'ADMIN',
@@ -52,4 +60,7 @@ export class User extends Model {
     defaultValue: UserRole.ENUMERATOR,
   })
   role: UserRole;
+
+  @BelongsToMany(() => Dzongkhag, () => SupervisorDzongkhag)
+  dzongkhags: Dzongkhag[];
 }
