@@ -137,6 +137,38 @@ export class AdministrativeZoneService {
     return this.findOne(id);
   }
 
+  async updateGeoJsonById(
+    id: number,
+    geoJsonDto: CreateAdministrativeZoneGeoJsonDto,
+  ): Promise<AdministrativeZone> {
+    const { properties, geometry } = geoJsonDto;
+
+    // Check if administrative zone exists
+    const existingZone = await this.administrativeZoneRepository.findByPk(id);
+    if (!existingZone) {
+      throw new Error(`Administrative zone with ID ${id} not found`);
+    }
+
+    // Convert GeoJSON geometry to PostGIS format
+    const geomString = JSON.stringify(geometry);
+
+    await this.administrativeZoneRepository.update(
+      {
+        dzongkhagId: properties.dzongkhagId,
+        name: properties.name,
+        areaCode: properties.areaCode,
+        type: properties.type,
+        areaSqKm: properties.areaSqKm,
+        geom: Sequelize.fn('ST_GeomFromGeoJSON', geomString),
+      },
+      {
+        where: { id },
+      },
+    );
+
+    return this.findOne(id);
+  }
+
   async remove(id: number): Promise<number> {
     return await this.administrativeZoneRepository.destroy({
       where: { id },

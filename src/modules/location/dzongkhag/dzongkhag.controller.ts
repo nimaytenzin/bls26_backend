@@ -234,6 +234,57 @@ export class DzongkhagController {
   // ============ ADMIN ROUTES (Only Admin) ============
 
   /**
+   * Get all dzongkhags with administrative zones
+   * @access Admin
+   * @query withGeom - Include geometry (default: false)
+   *
+   * @example
+   * GET /dzongkhag/admin/with-administrative-zones
+   * GET /dzongkhag/admin/with-administrative-zones?withGeom=true
+   */
+  @Get('admin/with-administrative-zones')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async findAllWithAdministrativeZones(@Query('withGeom') withGeom?: string) {
+    const includeGeom = withGeom === 'true';
+    return this.dzongkhagService.findAll(includeGeom, true, false, false);
+  }
+
+  /**
+   * Get all dzongkhags with sub-administrative zones
+   * @access Admin
+   * @query withGeom - Include geometry (default: false)
+   *
+   * @example
+   * GET /dzongkhag/admin/with-sub-administrative-zones
+   * GET /dzongkhag/admin/with-sub-administrative-zones?withGeom=true
+   */
+  @Get('admin/with-sub-administrative-zones')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async findAllWithSubAdministrativeZones(@Query('withGeom') withGeom?: string) {
+    const includeGeom = withGeom === 'true';
+    return this.dzongkhagService.findAll(includeGeom, true, true, false);
+  }
+
+  /**
+   * Get all dzongkhags with enumeration areas
+   * @access Admin
+   * @query withGeom - Include geometry (default: false)
+   *
+   * @example
+   * GET /dzongkhag/admin/with-enumeration-areas
+   * GET /dzongkhag/admin/with-enumeration-areas?withGeom=true
+   */
+  @Get('admin/with-enumeration-areas')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async findAllWithEnumerationAreas(@Query('withGeom') withGeom?: string) {
+    const includeGeom = withGeom === 'true';
+    return this.dzongkhagService.findAll(includeGeom, true, true, true);
+  }
+
+  /**
    * Create Dzongkhag
    * @access Admin
    */

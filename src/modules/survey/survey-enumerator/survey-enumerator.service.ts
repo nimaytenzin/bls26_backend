@@ -237,4 +237,30 @@ export class SurveyEnumeratorService {
       errors,
     };
   }
+
+  /**
+   * Generate CSV template for bulk upload of enumerators
+   * Template includes: Name, CID, Email Address, Phone Number, Password
+   * @returns CSV template string
+   */
+  async generateCSVTemplate(): Promise<string> {
+    const headers = [
+      'Name',
+      'CID',
+      'Email Address',
+      'Phone Number',
+      'Password',
+    ];
+
+    // Add example row
+    const exampleRow = [
+      'Nima Yoezer', // Example name
+      '12345678901', // Example CID
+      'nima.yoezer@example.com', // Example email (optional)
+      '17123456', // Example phone number (optional)
+      '', // Password (optional - will use CID if not provided)
+    ];
+
+    return `${headers.join(',')}\n${exampleRow.join(',')}`;
+  }
 }

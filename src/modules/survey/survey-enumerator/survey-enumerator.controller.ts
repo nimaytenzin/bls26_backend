@@ -7,7 +7,10 @@ import {
   Delete,
   UseGuards,
   ParseIntPipe,
+  Header,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { SurveyEnumeratorService } from './survey-enumerator.service';
 import { CreateSurveyEnumeratorDto } from './dto/create-survey-enumerator.dto';
 import { BulkAssignFromCsvDto } from './dto/bulk-assign-csv.dto';
@@ -87,5 +90,22 @@ export class SurveyEnumeratorController {
     @Body() body: { userIds: number[] },
   ) {
     return this.surveyEnumeratorService.removeMultiple(surveyId, body.userIds);
+  }
+
+  /**
+   * Generate CSV template for bulk upload of enumerators
+   * Template includes: Name, CID, Email Address, Phone Number, Password
+   * @access Admin, Supervisor
+   */
+  @Get('template/csv')
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="enumerator_upload_template.csv"',
+  )
+  async getCSVTemplate(@Res() res: Response) {
+    const template = await this.surveyEnumeratorService.generateCSVTemplate();
+    res.send(template);
   }
 }

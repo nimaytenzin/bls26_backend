@@ -10,7 +10,14 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  UseInterceptors,
+  UploadedFile,
+  Header,
+  Res,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { SurveyEnumerationAreaService } from './survey-enumeration-area.service';
 import {
   CreateSurveyEnumerationAreaDto,
@@ -171,5 +178,78 @@ export class SurveyEnumerationAreaController {
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id') id: string) {
     return this.surveyEnumerationAreaService.remove(+id);
+  }
+
+  /**
+   * Generate CSV template for bulk upload of enumeration areas
+   * Template includes: Dzongkhag Code, Admin Zone Code, Sub Admin Zone Code, Enumeration Code
+   * @access Admin only
+   */
+  @Get('template/csv')
+
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="enumeration_area_upload_template.csv"',
+  )
+  async getCSVTemplate(@Res() res: Response) {
+    const template =
+      await this.surveyEnumerationAreaService.generateCSVTemplate();
+    res.send(template);
+  }
+
+  /**
+   * Bulk upload enumeration areas from CSV file
+   * CSV should contain: Dzongkhag Code, Admin Zone Code, Sub Admin Zone Code, Enumeration Code
+   * @param surveyId - Survey ID to assign enumeration areas to
+   * @param file - CSV file
+   * @access Admin only
+   */
+  @Post('bulk-upload/:surveyId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+      fileFilter: (req, file, cb) => {
+        if (
+          file.mimetype === 'text/csv' ||
+          file.mimetype === 'application/vnd.ms-excel' ||
+          file.originalname.endsWith('.csv')
+        ) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              'Invalid file type. Only .csv files are allowed.',
+            ),
+            false,
+          );
+        }
+      },
+    }),
+  )
+  async bulkUploadFromCSV(
+    @Param('surveyId') surveyId: string,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    try {
+      // Parse the CSV file
+      const csvContent = file.buffer.toString('utf-8');
+      const result = await this.surveyEnumerationAreaService.bulkUploadFromCSV(
+        +surveyId,
+        csvContent,
+      );
+
+      return result;
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to process CSV file: ${error.message}`,
+      );
+    }
   }
 }

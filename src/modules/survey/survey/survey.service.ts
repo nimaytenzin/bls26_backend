@@ -94,6 +94,7 @@ export class SurveyService {
       limit,
       order,
       include: ['enumerationAreas'],
+      distinct: true, // Count distinct surveys, not rows from JOIN
     });
 
     // Return paginated response

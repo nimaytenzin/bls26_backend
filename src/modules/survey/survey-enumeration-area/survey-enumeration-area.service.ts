@@ -18,6 +18,7 @@ import { SurveyEnumerationAreaHouseholdListing } from '../survey-enumeration-are
 import { SubAdministrativeZone } from 'src/modules/location/sub-administrative-zone/entities/sub-administrative-zone.entity';
 import { AdministrativeZone } from 'src/modules/location/administrative-zone/entities/administrative-zone.entity';
 import { Dzongkhag } from 'src/modules/location/dzongkhag/entities/dzongkhag.entity';
+import { BulkUploadEaResponseDto } from './dto/bulk-upload-ea.dto';
 
 @Injectable()
 export class SurveyEnumerationAreaService {
@@ -474,5 +475,384 @@ export class SurveyEnumerationAreaService {
     }
 
     return { deleted: true };
+  }
+
+  /**
+   * Generate CSV template for bulk upload of enumeration areas
+   * Template includes: Dzongkhag Code, Admin Zone Code, Sub Admin Zone Code, Enumeration Code
+   * @returns CSV template string
+   */
+  async generateCSVTemplate(): Promise<string> {
+    const headers = [
+      'Dzongkhag Code',
+      'Admin Zone Code',
+      'Sub Admin Zone Code',
+      'Enumeration Code',
+    ];
+
+    // Add example row
+    const exampleRow = [
+      '01', // Example dzongkhag code
+      '01', // Example admin zone code
+      '01', // Example sub admin zone code
+      '01', // Example enumeration code
+    ];
+
+    return `${headers.join(',')}\n${exampleRow.join(',')}`;
+  }
+
+  /**
+   * Parse CSV file and find enumeration areas by codes
+   * @param csvContent - CSV file content as string
+   * @returns Array of parsed rows
+   */
+  private parseCSV(csvContent: string): Array<{
+    dzongkhagCode: string;
+    adminZoneCode: string;
+    subAdminZoneCode: string;
+    enumerationCode: string;
+    fullEaCode?: string;
+  }> {
+    console.log('[CSV Parse] Starting CSV parsing...');
+    console.log('[CSV Parse] CSV content length:', csvContent.length);
+    console.log('[CSV Parse] First 200 chars:', csvContent.substring(0, 200));
+
+    const lines = csvContent.split('\n').filter((line) => line.trim());
+    console.log('[CSV Parse] Total lines after filtering:', lines.length);
+    
+    if (lines.length < 2) {
+      throw new BadRequestException('CSV file must contain at least a header and one data row');
+    }
+
+    // Parse header - handle quoted CSV values
+    const headerLine = lines[0].trim();
+    console.log('[CSV Parse] Header line:', headerLine);
+    
+    // Simple CSV parsing - split by comma and trim, remove quotes if present
+    const headers = headerLine.split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+    console.log('[CSV Parse] Parsed headers:', headers);
+
+    // Find column indices - try exact match first, then partial match
+    const findColumnIndex = (exactMatches: string[], partialChecks: ((h: string) => boolean)[]): number => {
+      // Try exact matches first (case-insensitive)
+      for (const exact of exactMatches) {
+        const index = headers.findIndex((h) => h.toLowerCase() === exact.toLowerCase());
+        if (index !== -1) {
+          console.log(`[CSV Parse] Found exact match for "${exact}" at index ${index}`);
+          return index;
+        }
+      }
+      
+      // Fall back to partial matching
+      for (const check of partialChecks) {
+        const index = headers.findIndex((h) => check(h.toLowerCase()));
+        if (index !== -1) {
+          console.log(`[CSV Parse] Found partial match at index ${index}`);
+          return index;
+        }
+      }
+      
+      console.log(`[CSV Parse] No match found for column`);
+      return -1;
+    };
+
+    const dzongkhagIndex = findColumnIndex(
+      ['Dzongkhag Code', 'dzongkhag code', 'DzongkhagCode'],
+      [(h) => h.includes('dzongkhag')]
+    );
+    console.log('[CSV Parse] Dzongkhag Code index:', dzongkhagIndex);
+
+    const adminZoneIndex = findColumnIndex(
+      ['Admin Zone Code', 'admin zone code', 'AdminZoneCode', 'Administrative Zone Code'],
+      [(h) => h.includes('admin') && h.includes('zone') && !h.includes('sub')]
+    );
+    console.log('[CSV Parse] Admin Zone Code index:', adminZoneIndex);
+
+    const subAdminZoneIndex = findColumnIndex(
+      ['Sub Admin Zone Code', 'sub admin zone code', 'SubAdminZoneCode', 'Sub Administrative Zone Code'],
+      [(h) => h.includes('sub') && h.includes('admin') && h.includes('zone')]
+    );
+    console.log('[CSV Parse] Sub Admin Zone Code index:', subAdminZoneIndex);
+
+    const enumerationIndex = findColumnIndex(
+      ['Enumeration Code', 'enumeration code', 'EnumerationCode', 'Enumeration Area Code'],
+      [(h) => h.includes('enumeration')]
+    );
+    console.log('[CSV Parse] Enumeration Code index:', enumerationIndex);
+
+    const fullEaIndex = findColumnIndex(
+      ['Full EA Code', 'full ea code', 'FullEACode'],
+      [(h) => h.includes('full') && h.includes('ea')]
+    );
+    console.log('[CSV Parse] Full EA Code index:', fullEaIndex);
+
+    if (
+      dzongkhagIndex === -1 ||
+      adminZoneIndex === -1 ||
+      subAdminZoneIndex === -1 ||
+      enumerationIndex === -1
+    ) {
+      console.error('[CSV Parse] Missing required columns!');
+      console.error('[CSV Parse] Dzongkhag:', dzongkhagIndex, 'Admin:', adminZoneIndex, 'Sub:', subAdminZoneIndex, 'Enum:', enumerationIndex);
+      throw new BadRequestException(
+        `CSV must contain columns: Dzongkhag Code, Admin Zone Code, Sub Admin Zone Code, Enumeration Code. Found headers: ${headers.join(', ')}`,
+      );
+    }
+
+    // Parse data rows
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) {
+        console.log(`[CSV Parse] Skipping empty line ${i + 1}`);
+        continue;
+      }
+
+      // Simple CSV parsing - split by comma and trim, remove quotes if present
+      const values = line.split(',').map((v) => v.trim().replace(/^"|"$/g, ''));
+      console.log(`[CSV Parse] Row ${i + 1} values:`, values);
+      
+      if (values.length < 4) {
+        console.log(`[CSV Parse] Skipping row ${i + 1} - insufficient values (${values.length})`);
+        continue;
+      }
+
+      const rowData = {
+        dzongkhagCode: values[dzongkhagIndex] || '',
+        adminZoneCode: values[adminZoneIndex] || '',
+        subAdminZoneCode: values[subAdminZoneIndex] || '',
+        enumerationCode: values[enumerationIndex] || '',
+        fullEaCode:
+          fullEaIndex !== -1 ? values[fullEaIndex] || undefined : undefined,
+      };
+      
+      console.log(`[CSV Parse] Row ${i + 1} parsed:`, rowData);
+      rows.push(rowData);
+    }
+
+    console.log('[CSV Parse] Total rows parsed:', rows.length);
+    return rows;
+  }
+
+  /**
+   * Find enumeration area by hierarchical codes
+   * @param dzongkhagCode - Dzongkhag area code
+   * @param adminZoneCode - Administrative zone area code
+   * @param subAdminZoneCode - Sub-administrative zone area code
+   * @param enumerationCode - Enumeration area code
+   * @returns Enumeration area or null
+   */
+  private async findEnumerationAreaByCodes(
+    dzongkhagCode: string,
+    adminZoneCode: string,
+    subAdminZoneCode: string,
+    enumerationCode: string,
+  ): Promise<EnumerationArea | null> {
+    console.log('[EA Lookup] Searching for EA with codes:', {
+      dzongkhagCode,
+      adminZoneCode,
+      subAdminZoneCode,
+      enumerationCode,
+    });
+
+    // Step 1: Find dzongkhag
+    console.log('[EA Lookup] Step 1: Looking for Dzongkhag with code:', dzongkhagCode);
+    const dzongkhag = await this.dzongkhagRepository.findOne({
+      where: { areaCode: dzongkhagCode },
+    });
+
+    if (!dzongkhag) {
+      console.log('[EA Lookup] ❌ Dzongkhag not found with code:', dzongkhagCode);
+      return null;
+    }
+    console.log('[EA Lookup] ✅ Found Dzongkhag:', dzongkhag.id, dzongkhag.name);
+
+    // Step 2: Find administrative zone
+    console.log('[EA Lookup] Step 2: Looking for Admin Zone with code:', adminZoneCode, 'in Dzongkhag:', dzongkhag.id);
+    const adminZone = await AdministrativeZone.findOne({
+      where: {
+        areaCode: adminZoneCode,
+        dzongkhagId: dzongkhag.id,
+      },
+    });
+
+    if (!adminZone) {
+      console.log('[EA Lookup] ❌ Admin Zone not found with code:', adminZoneCode, 'in Dzongkhag:', dzongkhag.id);
+      return null;
+    }
+    console.log('[EA Lookup] ✅ Found Admin Zone:', adminZone.id, adminZone.name);
+
+    // Step 3: Find sub-administrative zone
+    console.log('[EA Lookup] Step 3: Looking for Sub Admin Zone with code:', subAdminZoneCode, 'in Admin Zone:', adminZone.id);
+    const subAdminZone = await SubAdministrativeZone.findOne({
+      where: {
+        areaCode: subAdminZoneCode,
+        administrativeZoneId: adminZone.id,
+      },
+    });
+
+    if (!subAdminZone) {
+      console.log('[EA Lookup] ❌ Sub Admin Zone not found with code:', subAdminZoneCode, 'in Admin Zone:', adminZone.id);
+      return null;
+    }
+    console.log('[EA Lookup] ✅ Found Sub Admin Zone:', subAdminZone.id, subAdminZone.name);
+
+    // Step 4: Find enumeration area
+    console.log('[EA Lookup] Step 4: Looking for Enumeration Area with code:', enumerationCode, 'in Sub Admin Zone:', subAdminZone.id);
+    const enumerationArea = await EnumerationArea.findOne({
+      where: {
+        areaCode: enumerationCode,
+        subAdministrativeZoneId: subAdminZone.id,
+      },
+    });
+
+    if (!enumerationArea) {
+      console.log('[EA Lookup] ❌ Enumeration Area not found with code:', enumerationCode, 'in Sub Admin Zone:', subAdminZone.id);
+      return null;
+    }
+    console.log('[EA Lookup] ✅ Found Enumeration Area:', enumerationArea.id, enumerationArea.name);
+
+    return enumerationArea;
+  }
+
+  /**
+   * Bulk upload enumeration areas from CSV file
+   * @param surveyId - Survey ID
+   * @param csvContent - CSV file content as string
+   * @returns Upload result with success/failure statistics
+   */
+  async bulkUploadFromCSV(
+    surveyId: number,
+    csvContent: string,
+  ): Promise<BulkUploadEaResponseDto> {
+    console.log('[Bulk Upload] ========================================');
+    console.log('[Bulk Upload] Starting bulk upload for survey:', surveyId);
+    console.log('[Bulk Upload] ========================================');
+
+    // Verify survey exists
+    console.log('[Bulk Upload] Verifying survey exists...');
+    const survey = await this.surveyRepository.findByPk(surveyId);
+    if (!survey) {
+      console.error('[Bulk Upload] ❌ Survey not found:', surveyId);
+      throw new BadRequestException(`Survey with ID ${surveyId} not found`);
+    }
+    console.log('[Bulk Upload] ✅ Survey found:', survey.id, survey.name);
+
+    // Parse CSV
+    console.log('[Bulk Upload] Parsing CSV...');
+    const rows = this.parseCSV(csvContent);
+    console.log('[Bulk Upload] Parsed rows:', rows.length);
+    
+    if (rows.length === 0) {
+      console.error('[Bulk Upload] ❌ No data rows found in CSV');
+      throw new BadRequestException('CSV file contains no data rows');
+    }
+
+    const result: BulkUploadEaResponseDto = {
+      success: true,
+      totalRows: rows.length,
+      successful: 0,
+      failed: 0,
+      errors: [],
+      created: 0,
+      skipped: 0,
+    };
+
+    // Get existing survey enumeration areas to avoid duplicates
+    console.log('[Bulk Upload] Checking for existing enumeration areas...');
+    const existingSurveyEAs = await this.surveyEnumerationAreaRepository.findAll(
+      {
+        where: { surveyId },
+        attributes: ['enumerationAreaId'],
+      },
+    );
+    const existingEaIds = new Set(
+      existingSurveyEAs.map((sea) => sea.enumerationAreaId),
+    );
+    console.log('[Bulk Upload] Found', existingEaIds.size, 'existing enumeration areas');
+
+    // Process each row
+    console.log('[Bulk Upload] Processing', rows.length, 'rows...');
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowNumber = i + 2; // +2 because row 1 is header
+      
+      console.log(`[Bulk Upload] --- Processing row ${rowNumber} ---`);
+
+      try {
+        // Validate required fields
+        if (
+          !row.dzongkhagCode ||
+          !row.adminZoneCode ||
+          !row.subAdminZoneCode ||
+          !row.enumerationCode
+        ) {
+          console.log(`[Bulk Upload] ❌ Row ${rowNumber}: Missing required codes`);
+          result.errors.push({
+            row: rowNumber,
+            codes: `${row.dzongkhagCode || ''}-${row.adminZoneCode || ''}-${row.subAdminZoneCode || ''}-${row.enumerationCode || ''}`,
+            error: 'Missing required codes',
+          });
+          result.failed++;
+          continue;
+        }
+
+        // Find enumeration area
+        console.log(`[Bulk Upload] Row ${rowNumber}: Looking up enumeration area...`);
+        const enumerationArea = await this.findEnumerationAreaByCodes(
+          row.dzongkhagCode,
+          row.adminZoneCode,
+          row.subAdminZoneCode,
+          row.enumerationCode,
+        );
+
+        if (!enumerationArea) {
+          console.log(`[Bulk Upload] ❌ Row ${rowNumber}: Enumeration area not found`);
+          result.errors.push({
+            row: rowNumber,
+            codes: `${row.dzongkhagCode}-${row.adminZoneCode}-${row.subAdminZoneCode}-${row.enumerationCode}`,
+            error: 'Enumeration area not found with these codes',
+          });
+          result.failed++;
+          continue;
+        }
+
+        // Check if already exists
+        if (existingEaIds.has(enumerationArea.id)) {
+          console.log(`[Bulk Upload] ⚠️ Row ${rowNumber}: Already exists, skipping`);
+          result.skipped++;
+          result.successful++;
+          continue;
+        }
+
+        // Create survey enumeration area
+        console.log(`[Bulk Upload] Row ${rowNumber}: Creating survey enumeration area...`);
+        await this.surveyEnumerationAreaRepository.create({
+          surveyId,
+          enumerationAreaId: enumerationArea.id,
+        });
+
+        console.log(`[Bulk Upload] ✅ Row ${rowNumber}: Successfully created`);
+        result.created++;
+        result.successful++;
+        existingEaIds.add(enumerationArea.id); // Add to set to avoid duplicates in same batch
+      } catch (error) {
+        console.error(`[Bulk Upload] ❌ Row ${rowNumber}: Error:`, error.message);
+        console.error(`[Bulk Upload] Error stack:`, error.stack);
+        result.errors.push({
+          row: rowNumber,
+          codes: `${row.dzongkhagCode || ''}-${row.adminZoneCode || ''}-${row.subAdminZoneCode || ''}-${row.enumerationCode || ''}`,
+          error: error.message || 'Unknown error',
+        });
+        result.failed++;
+      }
+    }
+
+    result.success = result.failed === 0;
+    console.log('[Bulk Upload] ========================================');
+    console.log('[Bulk Upload] Upload complete!');
+    console.log('[Bulk Upload] Result:', result);
+    console.log('[Bulk Upload] ========================================');
+    return result;
   }
 }

@@ -92,6 +92,16 @@ export class AdministrativeZoneController {
     );
   }
 
+  @Patch('geojson/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async updateGeoJson(
+    @Param('id') id: string,
+    @Body() geoJsonDto: CreateAdministrativeZoneGeoJsonDto,
+  ) {
+    return this.administrativeZoneService.updateGeoJsonById(+id, geoJsonDto);
+  }
+
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
