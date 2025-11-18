@@ -102,4 +102,18 @@ export class DzongkhagAnnualStatsController {
   }> {
     return this.dzongkhagAnnualStatsService.computeCurrentAnnualStatistics();
   }
+
+
+
+  @Get('compute/current')
+  async getCurrentAnnualStatistics(): Promise<{
+    message: string;
+    year: number;
+    dzongkhagCount: number;
+    azCount: number;
+    sazCount: number;
+    eaCount: number;
+  }> {
+    return this.dzongkhagAnnualStatsService.computeCurrentAnnualStatistics();
+  }
 }
