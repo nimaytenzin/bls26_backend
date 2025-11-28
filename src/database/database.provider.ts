@@ -21,6 +21,9 @@ import { EAAnnualStats } from 'src/modules/annual statistics/ea-annual-statistic
 import { SAZAnnualStats } from 'src/modules/annual statistics/sub-administrative-zone-annual-statistics/entities/saz-annual-stats.entity';
 import { AZAnnualStats } from 'src/modules/annual statistics/administrative-zone-annual-statistics/entities/az-annual-stats.entity';
 import { DzongkhagAnnualStats } from 'src/modules/annual statistics/dzongkhag-annual-statistics/entities/dzongkhag-annual-stats.entity';
+import { SurveySamplingConfig } from 'src/modules/sampling/entities/survey-sampling-config.entity';
+import { SurveyEnumerationAreaSampling } from 'src/modules/sampling/entities/survey-enumeration-area-sampling.entity';
+import { SurveyEnumerationAreaHouseholdSample } from 'src/modules/sampling/entities/survey-enumeration-area-household-sample.entity';
 
 export const databaseProviders = [
   {
@@ -59,6 +62,9 @@ export const databaseProviders = [
         SAZAnnualStats,
         AZAnnualStats,
         DzongkhagAnnualStats,
+        SurveySamplingConfig,
+        SurveyEnumerationAreaSampling,
+        SurveyEnumerationAreaHouseholdSample,
       ]);
 
       await sequelize.sync();

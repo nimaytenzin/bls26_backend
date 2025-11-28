@@ -168,7 +168,6 @@ export class EAAnnualStatsService {
    *
    * Runs automatically every 10 minutes via cron job
    */
-
   async computeCurrentYearStats(): Promise<{
     message: string;
     year: number;
@@ -271,6 +270,118 @@ export class EAAnnualStatsService {
     return {
       message: `Successfully computed annual stats for all EAs for year ${currentYear}`,
       year: currentYear,
+      totalEAs,
+      recordsProcessed,
+      recordsWithData,
+    };
+  }
+
+  /**
+   * Compute annual statistics for all EAs for a specific year
+   * This method processes all enumeration areas and computes stats from their latest validated surveys for the given year
+   *
+   * @param year - The year to compute statistics for
+   */
+  async computeYearStats(year: number): Promise<{
+    message: string;
+    year: number;
+    totalEAs: number;
+    recordsProcessed: number;
+    recordsWithData: number;
+  }> {
+    this.logger.log(
+      `Computing EA statistics for year ${year}...`,
+    );
+    const startTime = Date.now();
+
+    // Step 1: Get all Enumeration Areas
+    const allEAs = await EnumerationArea.findAll({
+      attributes: ['id'],
+      raw: true,
+    });
+
+    const totalEAs = allEAs.length;
+    let recordsProcessed = 0;
+    let recordsWithData = 0;
+
+    // Step 2 & 3: For each EA, find latest validated survey and aggregate data
+    for (const ea of allEAs) {
+      // Find the latest validated survey enumeration area for this EA in the specified year
+      const latestSurveyEA = await SurveyEnumerationArea.findOne({
+        where: {
+          enumerationAreaId: ea.id,
+          isValidated: true,
+        },
+        include: [
+          {
+            model: Survey,
+            as: 'survey',
+            where: {
+              year: year,
+            },
+            required: true,
+          },
+        ],
+        order: [
+          ['validationDate', 'DESC NULLS LAST'],
+          ['updatedAt', 'DESC'],
+        ],
+        limit: 1,
+      });
+
+      let totalHouseholds = 0;
+      let totalMale = 0;
+      let totalFemale = 0;
+
+      // Step 3: If we found a validated survey, aggregate household data
+      if (latestSurveyEA) {
+        const householdListings =
+          await SurveyEnumerationAreaHouseholdListing.findAll({
+            where: {
+              surveyEnumerationAreaId: latestSurveyEA.id,
+            },
+            attributes: ['totalMale', 'totalFemale'],
+            raw: true,
+          });
+
+        totalHouseholds = householdListings.length;
+        totalMale = householdListings.reduce(
+          (sum, hl) => sum + (hl.totalMale || 0),
+          0,
+        );
+        totalFemale = householdListings.reduce(
+          (sum, hl) => sum + (hl.totalFemale || 0),
+          0,
+        );
+
+        if (totalHouseholds > 0) {
+          recordsWithData++;
+        }
+      }
+
+      // Step 4: Upsert into EAAnnualStats
+      await this.eaAnnualStatsRepository.upsert({
+        enumerationAreaId: ea.id,
+        year: year,
+        totalHouseholds,
+        totalMale,
+        totalFemale,
+      });
+
+      recordsProcessed++;
+    }
+
+    const executionTime = Date.now() - startTime;
+    this.logger.log(
+      `Completed: Processed ${recordsProcessed} EAs (${recordsWithData} with data) for year ${year} in ${executionTime}ms`,
+    );
+
+    // Step 5: Aggregate up the hierarchy
+    await this.aggregateHierarchyStats(year);
+
+    return {
+      message: `Successfully computed annual stats for all EAs for year ${year}`,
+      year: year,
       totalEAs,
       recordsProcessed,
       recordsWithData,

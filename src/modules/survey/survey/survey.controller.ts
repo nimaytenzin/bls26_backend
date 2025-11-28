@@ -15,6 +15,7 @@ import { SurveyService } from './survey.service';
 import { CreateSurveyDto } from './dto/create-survey.dto';
 import { UpdateSurveyDto } from './dto/update-survey.dto';
 import { SurveyStatisticsResponseDto } from './dto/survey-statistics-response.dto';
+import { SurveyEnumerationHierarchyDto } from './dto/survey-enumeration-hierarchy-response.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -89,7 +90,9 @@ export class SurveyController {
   }
 
   @Get(':id/enumeration-hierarchy')
-  async getSurveyEnumerationHierarchy(@Param('id') id: string) {
+  async getSurveyEnumerationHierarchy(
+    @Param('id') id: string,
+  ): Promise<SurveyEnumerationHierarchyDto> {
     return this.surveyService.getSurveyEnumerationHierarchy(+id);
   }
 

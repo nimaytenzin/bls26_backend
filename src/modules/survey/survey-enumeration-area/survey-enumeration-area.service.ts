@@ -19,6 +19,8 @@ import { SubAdministrativeZone } from 'src/modules/location/sub-administrative-z
 import { AdministrativeZone } from 'src/modules/location/administrative-zone/entities/administrative-zone.entity';
 import { Dzongkhag } from 'src/modules/location/dzongkhag/entities/dzongkhag.entity';
 import { BulkUploadEaResponseDto } from './dto/bulk-upload-ea.dto';
+import { EAAnnualStatsService } from '../../annual statistics/ea-annual-statistics/ea-annual-stats.service';
+import { DzongkhagAnnualStatsService } from '../../annual statistics/dzongkhag-annual-statistics/dzongkhag-annual-stats.service';
 
 @Injectable()
 export class SurveyEnumerationAreaService {
@@ -31,6 +33,8 @@ export class SurveyEnumerationAreaService {
     private readonly householdListingRepository: typeof SurveyEnumerationAreaHouseholdListing,
     @Inject('DZONGKHAG_REPOSITORY')
     private readonly dzongkhagRepository: typeof Dzongkhag,
+    private readonly eaAnnualStatsService: EAAnnualStatsService,
+    private readonly dzongkhagAnnualStatsService: DzongkhagAnnualStatsService,
   ) {}
 
   /**
@@ -373,9 +377,56 @@ export class SurveyEnumerationAreaService {
     // Check if all EAs are validated and update survey flag
     if (validateDto.isApproved) {
       await this.updateSurveyValidationStatus(surveyEA.surveyId);
+      
+      // Trigger annual statistics computation for the survey's year
+      // Get survey to check the year
+      const survey = await this.surveyRepository.findByPk(surveyEA.surveyId, {
+        attributes: ['id', 'year'],
+      });
+      
+      if (survey) {
+        const surveyYear = survey.year;
+        const currentYear = new Date().getFullYear();
+        
+        // Only trigger stats computation if survey year is valid (not in future, reasonable range)
+        // Allow years from 2000 to current year + 1 (for planning purposes)
+        if (surveyYear >= 2000 && surveyYear <= currentYear + 1) {
+          // Trigger annual statistics computation asynchronously (fire and forget)
+          // This ensures validation response is not blocked
+          this.triggerAnnualStatsComputation(surveyYear).catch((error) => {
+            // Log error but don't fail validation
+            console.error(
+              `Error computing annual statistics for year ${surveyYear} after validation:`,
+              error,
+            );
+          });
+        } else {
+          console.warn(
+            `Skipping annual stats computation: Survey year ${surveyYear} is outside valid range (2000-${currentYear + 1})`,
+          );
+        }
+      }
     }
 
     return this.findOne(id);
+  }
+
+  /**
+   * Trigger annual statistics computation asynchronously for a specific year
+   * Called after successful validation to update statistics
+   * @param year - The survey year to compute statistics for
+   */
+  private async triggerAnnualStatsComputation(year: number): Promise<void> {
+    try {
+      // First compute EA-level stats for the survey year
+      await this.eaAnnualStatsService.computeYearStats(year);
+      
+      // Then aggregate up the hierarchy for that year
+      await this.dzongkhagAnnualStatsService.computeAnnualStatisticsForYear(year);
+    } catch (error) {
+      console.error(`Error in annual statistics computation for year ${year}:`, error);
+      throw error;
+    }
   }
 
   /**

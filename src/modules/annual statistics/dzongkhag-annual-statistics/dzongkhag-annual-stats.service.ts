@@ -332,6 +332,220 @@ export class DzongkhagAnnualStatsService {
   }
 
   /**
+   * Compute annual statistics for all geographic levels for a specific year
+   * This is a wrapper that accepts a year parameter instead of using current year
+   *
+   * @param year - The year to compute statistics for
+   */
+  async computeAnnualStatisticsForYear(year: number): Promise<{
+    message: string;
+    year: number;
+    dzongkhagCount: number;
+    azCount: number;
+    sazCount: number;
+    eaCount: number;
+  }> {
+    this.logger.log(`Starting hierarchical aggregation for year ${year}...`);
+    const startTime = Date.now();
+
+    let dzongkhagCount = 0;
+    let azCount = 0;
+    let sazCount = 0;
+    let eaCount = 0;
+
+    // Step 1: Get all Dzongkhags
+    const dzongkhags = await Dzongkhag.findAll();
+    this.logger.log(`Processing ${dzongkhags.length} Dzongkhags`);
+
+    // Step 2: Iterate through each Dzongkhag
+    for (const dzongkhag of dzongkhags) {
+      // Dzongkhag-level accumulators
+      let dzTotalHouseholds = 0;
+      let dzTotalMale = 0;
+      let dzTotalFemale = 0;
+      let dzUrbanHouseholds = 0;
+      let dzRuralHouseholds = 0;
+      let dzUrbanMale = 0;
+      let dzRuralMale = 0;
+      let dzUrbanFemale = 0;
+      let dzRuralFemale = 0;
+      let dzEACount = 0;
+      let dzUrbanEACount = 0;
+      let dzRuralEACount = 0;
+      let dzSAZCount = 0;
+      let dzUrbanSAZCount = 0;
+      let dzRuralSAZCount = 0;
+      let dzAZCount = 0;
+      let dzUrbanAZCount = 0;
+      let dzRuralAZCount = 0;
+
+      // Step 3: Get all Administrative Zones for this Dzongkhag
+      const administrativeZones = await AdministrativeZone.findAll({
+        where: { dzongkhagId: dzongkhag.id },
+      });
+
+      for (const az of administrativeZones) {
+        const isUrbanAZ = az.type === AdministrativeZoneType.THROMDE;
+        dzAZCount++;
+
+        if (isUrbanAZ) {
+          dzUrbanAZCount++;
+        } else {
+          dzRuralAZCount++;
+        }
+
+        // AZ-level accumulators
+        let azTotalHouseholds = 0;
+        let azTotalMale = 0;
+        let azTotalFemale = 0;
+        let azEACount = 0;
+        let azSAZCount = 0;
+
+        // Step 4: Get all Sub-Administrative Zones for this AZ
+        const subAdministrativeZones = await SubAdministrativeZone.findAll({
+          where: { administrativeZoneId: az.id },
+        });
+
+        for (const saz of subAdministrativeZones) {
+          dzSAZCount++;
+          azSAZCount++;
+
+          if (isUrbanAZ) {
+            dzUrbanSAZCount++;
+          } else {
+            dzRuralSAZCount++;
+          }
+
+          // SAZ-level accumulators
+          let sazTotalHouseholds = 0;
+          let sazTotalMale = 0;
+          let sazTotalFemale = 0;
+          let sazEACount = 0;
+
+          // Step 5: Get all Enumeration Areas for this SAZ
+          const enumerationAreas = await EnumerationArea.findAll({
+            where: { subAdministrativeZoneId: saz.id },
+          });
+
+          for (const ea of enumerationAreas) {
+            dzEACount++;
+            azEACount++;
+            sazEACount++;
+
+            if (isUrbanAZ) {
+              dzUrbanEACount++;
+            } else {
+              dzRuralEACount++;
+            }
+
+            // Step 6: Get EA annual stats for this year
+            const eaStats = await EAAnnualStats.findOne({
+              where: {
+                enumerationAreaId: ea.id,
+                year: year,
+              },
+            });
+
+            if (eaStats) {
+              eaCount++;
+              sazTotalHouseholds += eaStats.totalHouseholds || 0;
+              sazTotalMale += eaStats.totalMale || 0;
+              sazTotalFemale += eaStats.totalFemale || 0;
+            }
+          }
+
+          // Save SAZ annual stats (always create entry even with zero values)
+          await this.sazAnnualStatsService.create({
+            subAdministrativeZoneId: saz.id,
+            year,
+            eaCount: sazEACount,
+            totalHouseholds: sazTotalHouseholds,
+            totalMale: sazTotalMale,
+            totalFemale: sazTotalFemale,
+          });
+
+          sazCount++;
+
+          // Aggregate to AZ level
+          azTotalHouseholds += sazTotalHouseholds;
+          azTotalMale += sazTotalMale;
+          azTotalFemale += sazTotalFemale;
+        }
+
+        // Save AZ annual stats (always create entry even with zero values)
+        await this.azAnnualStatsService.create({
+          administrativeZoneId: az.id,
+          year,
+          eaCount: azEACount,
+          sazCount: azSAZCount,
+          totalHouseholds: azTotalHouseholds,
+          totalMale: azTotalMale,
+          totalFemale: azTotalFemale,
+        });
+
+        azCount++;
+
+        // Aggregate to Dzongkhag level
+        dzTotalHouseholds += azTotalHouseholds;
+        dzTotalMale += azTotalMale;
+        dzTotalFemale += azTotalFemale;
+
+        // Urban/Rural segregation based on AZ type
+        if (isUrbanAZ) {
+          dzUrbanHouseholds += azTotalHouseholds;
+          dzUrbanMale += azTotalMale;
+          dzUrbanFemale += azTotalFemale;
+        } else {
+          dzRuralHouseholds += azTotalHouseholds;
+          dzRuralMale += azTotalMale;
+          dzRuralFemale += azTotalFemale;
+        }
+      }
+
+      // Save Dzongkhag annual stats (always create entry even with zero values)
+      await this.dzongkhagAnnualStatsRepository.upsert({
+        dzongkhagId: dzongkhag.id,
+        year,
+        eaCount: dzEACount,
+        urbanEACount: dzUrbanEACount,
+        ruralEACount: dzRuralEACount,
+        sazCount: dzSAZCount,
+        urbanSAZCount: dzUrbanSAZCount,
+        ruralSAZCount: dzRuralSAZCount,
+        azCount: dzAZCount,
+        urbanAZCount: dzUrbanAZCount,
+        ruralAZCount: dzRuralAZCount,
+        totalHouseholds: dzTotalHouseholds,
+        urbanHouseholdCount: dzUrbanHouseholds,
+        ruralHouseholdCount: dzRuralHouseholds,
+        totalMale: dzTotalMale,
+        urbanMale: dzUrbanMale,
+        ruralMale: dzRuralMale,
+        totalFemale: dzTotalFemale,
+        urbanFemale: dzUrbanFemale,
+        ruralFemale: dzRuralFemale,
+      });
+
+      dzongkhagCount++;
+    }
+
+    const executionTime = Date.now() - startTime;
+    this.logger.log(
+      `Hierarchical aggregation completed in ${executionTime}ms: ` +
+        `${dzongkhagCount} Dzongkhags, ${azCount} AZs, ${sazCount} SAZs, ${eaCount} EAs with data`,
+    );
+
+    return {
+      message: `Successfully computed annual stats for year ${year}`,
+      year,
+      dzongkhagCount,
+      azCount,
+      sazCount,
+      eaCount,
+    };
+  }
+
+  /**
    * Get all Dzongkhags with annual statistics as GeoJSON
    * Combines geographic boundaries with demographic/household statistics
    *

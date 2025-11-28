@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CreateSurveyDto } from './dto/create-survey.dto';
 import { UpdateSurveyDto } from './dto/update-survey.dto';
 import { SurveyStatisticsResponseDto } from './dto/survey-statistics-response.dto';
+import { SurveyEnumerationHierarchyDto } from './dto/survey-enumeration-hierarchy-response.dto';
 import { Survey, SurveyStatus } from './entities/survey.entity';
 import { EnumerationArea } from '../../location/enumeration-area/entities/enumeration-area.entity';
 import { SubAdministrativeZone } from '../../location/sub-administrative-zone/entities/sub-administrative-zone.entity';
@@ -614,7 +615,9 @@ export class SurveyService {
    * Returns: Dzongkhag → Administrative Zone → Sub-Administrative Zone → Enumeration Areas
    * @param surveyId - Survey ID
    */
-  async getSurveyEnumerationHierarchy(surveyId: number) {
+  async getSurveyEnumerationHierarchy(
+    surveyId: number,
+  ): Promise<SurveyEnumerationHierarchyDto> {
     // Verify survey exists
     const survey = await this.surveyRepository.findByPk(surveyId, {
       attributes: ['id', 'name', 'year', 'status'],
@@ -624,10 +627,19 @@ export class SurveyService {
       throw new Error(`Survey with ID ${surveyId} not found`);
     }
 
-    // Step 1: Get all survey enumeration areas (just the IDs)
+    // Step 1: Get all survey enumeration areas with submission/validation status
     const surveyEAs = await this.surveyEnumerationAreaRepository.findAll({
       where: { surveyId: surveyId },
-      attributes: ['id', 'enumerationAreaId'],
+      attributes: [
+        'id',
+        'enumerationAreaId',
+        'isSubmitted',
+        'submittedBy',
+        'submissionDate',
+        'isValidated',
+        'validatedBy',
+        'validationDate',
+      ],
     });
 
     if (surveyEAs.length === 0) {
@@ -702,6 +714,37 @@ export class SurveyService {
     const surveyEAMap = new Map(
       surveyEAs.map((sea) => [sea.enumerationAreaId, sea.id]),
     );
+    const surveyEADataMap = new Map(
+      surveyEAs.map((sea) => [
+        sea.enumerationAreaId,
+        {
+          id: sea.id,
+          isSubmitted: sea.isSubmitted,
+          submittedBy: sea.submittedBy,
+          submissionDate: sea.submissionDate,
+          isValidated: sea.isValidated,
+          validatedBy: sea.validatedBy,
+          validationDate: sea.validationDate,
+        },
+      ]),
+    );
+
+    // Get household counts for each survey enumeration area
+    const surveyEAIds = surveyEAs.map((sea) => sea.id);
+    const householdCounts = new Map<number, number>();
+    
+    if (surveyEAIds.length > 0) {
+      const households = await this.householdListingRepository.findAll({
+        where: { surveyEnumerationAreaId: surveyEAIds },
+        attributes: ['surveyEnumerationAreaId'],
+      });
+
+      // Count households per survey enumeration area
+      households.forEach((household) => {
+        const currentCount = householdCounts.get(household.surveyEnumerationAreaId) || 0;
+        householdCounts.set(household.surveyEnumerationAreaId, currentCount + 1);
+      });
+    }
 
     // Build hierarchical structure: Dzongkhag → AdminZone → SubAdminZone → EA
     const hierarchyMap = new Map();
@@ -758,12 +801,22 @@ export class SurveyService {
       );
 
       // Add enumeration area
+      const seaData = surveyEADataMap.get(ea.id);
+      const surveyEAId = surveyEAMap.get(ea.id);
+      const householdCount = householdCounts.get(surveyEAId) || 0;
+      
       subAdminZoneData.enumerationAreas.push({
         id: ea.id,
         name: ea.name,
         areaCode: ea.areaCode,
-        areaSqKm: ea.areaSqKm,
-        surveyEnumerationAreaId: surveyEAMap.get(ea.id),
+        surveyEnumerationAreaId: surveyEAId,
+        totalHouseholdCount: householdCount,
+        isSubmitted: seaData?.isSubmitted || false,
+        submittedBy: seaData?.submittedBy || null,
+        submissionDate: seaData?.submissionDate || null,
+        isValidated: seaData?.isValidated || false,
+        validatedBy: seaData?.validatedBy || null,
+        validationDate: seaData?.validationDate || null,
       });
     });
 

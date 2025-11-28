@@ -18,6 +18,8 @@ import { EAAnnualStatsModule } from './modules/annual statistics/ea-annual-stati
 import { SAZAnnualStatsModule } from './modules/annual statistics/sub-administrative-zone-annual-statistics/saz-annual-stats.module';
 import { AZAnnualStatsModule } from './modules/annual statistics/administrative-zone-annual-statistics/az-annual-stats.module';
 import { DzongkhagAnnualStatsModule } from './modules/annual statistics/dzongkhag-annual-statistics/dzongkhag-annual-stats.module';
+import { SamplingModule } from './modules/sampling/sampling.module';
+import { LocationDownloadModule } from './modules/location/location-download/location-download.module';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { DzongkhagAnnualStatsModule } from './modules/annual statistics/dzongkha
     SAZAnnualStatsModule,
     AZAnnualStatsModule,
     DzongkhagAnnualStatsModule,
+    SamplingModule,
+    LocationDownloadModule,
   ],
   controllers: [AppController],
   providers: [AppService],
