@@ -6,9 +6,12 @@ import {
 } from '@nestjs/common';
 import {
   CreateSurveyEnumerationAreaDto,
-  SubmitSurveyEnumerationAreaDto,
-  ValidateSurveyEnumerationAreaDto,
+  CompleteEnumerationDto,
 } from './dto/create-survey-enumeration-area.dto';
+import {
+  PublishSurveyEnumerationAreaDto,
+  BulkPublishDto,
+} from './dto/publish-survey-enumeration-area.dto';
 import { UpdateSurveyEnumerationAreaDto } from './dto/update-survey-enumeration-area.dto';
 import { SurveyEnumerationArea } from './entities/survey-enumeration-area.entity';
 import { Survey } from '../survey/entities/survey.entity';
@@ -53,22 +56,25 @@ export class SurveyEnumerationAreaService {
    * Get all survey enumeration area assignments with optional filters
    * @param surveyId - Optional filter by survey
    * @param enumerationAreaId - Optional filter by enumeration area
-   * @param isSubmitted - Optional filter by submission status
-   * @param isValidated - Optional filter by validation status
+   * @param isEnumerated - Optional filter by enumeration status
+   * @param isSampled - Optional filter by sampling status
+   * @param isPublished - Optional filter by publishing status
    */
   async findAll(
     surveyId?: number,
     enumerationAreaId?: number,
-    isSubmitted?: boolean,
-    isValidated?: boolean,
+    isEnumerated?: boolean,
+    isSampled?: boolean,
+    isPublished?: boolean,
   ) {
     const whereClause: any = {};
 
     if (surveyId !== undefined) whereClause.surveyId = surveyId;
     if (enumerationAreaId !== undefined)
       whereClause.enumerationAreaId = enumerationAreaId;
-    if (isSubmitted !== undefined) whereClause.isSubmitted = isSubmitted;
-    if (isValidated !== undefined) whereClause.isValidated = isValidated;
+    if (isEnumerated !== undefined) whereClause.isEnumerated = isEnumerated;
+    if (isSampled !== undefined) whereClause.isSampled = isSampled;
+    if (isPublished !== undefined) whereClause.isPublished = isPublished;
 
     return await this.surveyEnumerationAreaRepository.findAll({
       where: whereClause,
@@ -83,12 +89,17 @@ export class SurveyEnumerationAreaService {
         },
         {
           model: User,
-          as: 'submitter',
+          as: 'enumerator',
           attributes: ['id', 'name', 'role'],
         },
         {
           model: User,
-          as: 'validator',
+          as: 'sampler',
+          attributes: ['id', 'name', 'role'],
+        },
+        {
+          model: User,
+          as: 'publisher',
           attributes: ['id', 'name', 'role'],
         },
       ],
@@ -113,12 +124,17 @@ export class SurveyEnumerationAreaService {
         },
         {
           model: User,
-          as: 'submitter',
+          as: 'enumerator',
           attributes: ['id', 'name', 'role'],
         },
         {
           model: User,
-          as: 'validator',
+          as: 'sampler',
+          attributes: ['id', 'name', 'role'],
+        },
+        {
+          model: User,
+          as: 'publisher',
           attributes: ['id', 'name', 'role'],
         },
       ],
@@ -142,13 +158,19 @@ export class SurveyEnumerationAreaService {
         },
         {
           model: User,
-          as: 'submitter',
+          as: 'enumerator',
           attributes: ['id', 'name', 'cid', 'phoneNumber'],
           required: false,
         },
         {
           model: User,
-          as: 'validator',
+          as: 'sampler',
+          attributes: ['id', 'name', 'cid', 'phoneNumber'],
+          required: false,
+        },
+        {
+          model: User,
+          as: 'publisher',
           attributes: ['id', 'name', 'cid', 'phoneNumber'],
           required: false,
         },
@@ -260,15 +282,19 @@ export class SurveyEnumerationAreaService {
         id: surveyEA.id,
         surveyId: surveyEA.surveyId,
         enumerationAreaId: surveyEA.enumerationAreaId,
-        isSubmitted: surveyEA.isSubmitted,
-        submittedBy: surveyEA.submittedBy,
-        submissionDate: surveyEA.submissionDate,
-        isValidated: surveyEA.isValidated,
-        validatedBy: surveyEA.validatedBy,
-        validationDate: surveyEA.validationDate,
+        isEnumerated: surveyEA.isEnumerated,
+        enumeratedBy: surveyEA.enumeratedBy,
+        enumerationDate: surveyEA.enumerationDate,
+        isSampled: surveyEA.isSampled,
+        sampledBy: surveyEA.sampledBy,
+        sampledDate: surveyEA.sampledDate,
+        isPublished: surveyEA.isPublished,
+        publishedBy: surveyEA.publishedBy,
+        publishedDate: surveyEA.publishedDate,
         comments: surveyEA.comments,
-        submitter: surveyEA.submitter,
-        validator: surveyEA.validator,
+        enumerator: surveyEA.enumerator,
+        sampler: surveyEA.sampler,
+        publisher: surveyEA.publisher,
         createdAt: surveyEA.createdAt,
         updatedAt: surveyEA.updatedAt,
       });
@@ -286,58 +312,13 @@ export class SurveyEnumerationAreaService {
   }
 
   /**
-   * Submit data for a survey enumeration area (Supervisor only)
+   * Complete enumeration for a survey enumeration area (Enumerator only)
    * @param id - Survey Enumeration Area ID
-   * @param submitDto - Submission data
+   * @param completeDto - Enumeration completion data
    */
-  async submitData(id: number, submitDto: SubmitSurveyEnumerationAreaDto) {
-    const surveyEA = await this.surveyEnumerationAreaRepository.findByPk(id);
-
-    if (!surveyEA) {
-      throw new BadRequestException(
-        `Survey Enumeration Area with ID ${id} not found`,
-      );
-    }
-
-    if (surveyEA.isSubmitted) {
-      throw new BadRequestException('Data has already been submitted');
-    }
-
-    if (surveyEA.isValidated) {
-      throw new BadRequestException(
-        'Data has already been validated and cannot be resubmitted',
-      );
-    }
-
-    // Check if there are any household listings for this survey enumeration area
-    const householdListingsCount = await this.householdListingRepository.count({
-      where: { surveyEnumerationAreaId: id },
-    });
-
-    if (householdListingsCount === 0) {
-      throw new BadRequestException(
-        'Cannot submit enumeration area with no household listings. Please add household data before submitting.',
-      );
-    }
-
-    // Update submission fields
-    surveyEA.isSubmitted = true;
-    surveyEA.submittedBy = submitDto.submittedBy;
-    surveyEA.submissionDate = new Date();
-
-    await surveyEA.save();
-
-    return this.findOne(id);
-  }
-
-  /**
-   * Validate submitted data (Admin only)
-   * @param id - Survey Enumeration Area ID
-   * @param validateDto - Validation data
-   */
-  async validateData(
+  async completeEnumeration(
     id: number,
-    validateDto: ValidateSurveyEnumerationAreaDto,
+    completeDto: CompleteEnumerationDto,
   ) {
     const surveyEA = await this.surveyEnumerationAreaRepository.findByPk(id);
 
@@ -347,64 +328,87 @@ export class SurveyEnumerationAreaService {
       );
     }
 
-    if (!surveyEA.isSubmitted) {
-      throw new BadRequestException('Data must be submitted before validation');
+    if (surveyEA.isEnumerated) {
+      throw new BadRequestException('Enumeration has already been completed');
     }
 
-    if (surveyEA.isValidated) {
-      throw new BadRequestException('Data has already been validated');
+    // Check if there are any household listings for this survey enumeration area
+    const householdListingsCount = await this.householdListingRepository.count({
+      where: { surveyEnumerationAreaId: id },
+    });
+
+    if (householdListingsCount === 0) {
+      throw new BadRequestException(
+        'Cannot complete enumeration area with no household listings. Please add household data before completing.',
+      );
     }
 
-    // If rejected, reset submission status
-    if (!validateDto.isApproved) {
-      surveyEA.isSubmitted = false;
-      surveyEA.submittedBy = null;
-      surveyEA.submissionDate = null;
-      surveyEA.isValidated = false;
-      surveyEA.comments = validateDto.comments || 'Rejected by admin';
-    } else {
-      // If approved, mark as validated
-      surveyEA.isValidated = true;
-      surveyEA.validatedBy = validateDto.validatedBy;
-      surveyEA.validationDate = new Date();
-      if (validateDto.comments) {
-        surveyEA.comments = validateDto.comments;
-      }
+    // Update enumeration fields
+    surveyEA.isEnumerated = true;
+    surveyEA.enumeratedBy = completeDto.enumeratedBy;
+    surveyEA.enumerationDate = new Date();
+
+    await surveyEA.save();
+
+    return this.findOne(id);
+  }
+
+  /**
+   * Publish sampled data for a survey enumeration area (Admin only)
+   * @param id - Survey Enumeration Area ID
+   * @param publishDto - Publishing data
+   */
+  async publishData(id: number, publishDto: PublishSurveyEnumerationAreaDto) {
+    const surveyEA = await this.surveyEnumerationAreaRepository.findByPk(id);
+
+    if (!surveyEA) {
+      throw new BadRequestException(
+        `Survey Enumeration Area with ID ${id} not found`,
+      );
+    }
+
+    if (!surveyEA.isSampled) {
+      throw new BadRequestException(
+        'Data must be sampled before publishing',
+      );
+    }
+
+    if (surveyEA.isPublished) {
+      throw new BadRequestException('Data has already been published');
+    }
+
+    // Update publishing fields
+    surveyEA.isPublished = true;
+    surveyEA.publishedBy = publishDto.publishedBy;
+    surveyEA.publishedDate = new Date();
+    if (publishDto.comments) {
+      surveyEA.comments = publishDto.comments;
     }
 
     await surveyEA.save();
 
-    // Check if all EAs are validated and update survey flag
-    if (validateDto.isApproved) {
-      await this.updateSurveyValidationStatus(surveyEA.surveyId);
-      
-      // Trigger annual statistics computation for the survey's year
-      // Get survey to check the year
-      const survey = await this.surveyRepository.findByPk(surveyEA.surveyId, {
-        attributes: ['id', 'year'],
-      });
-      
-      if (survey) {
-        const surveyYear = survey.year;
-        const currentYear = new Date().getFullYear();
-        
-        // Only trigger stats computation if survey year is valid (not in future, reasonable range)
-        // Allow years from 2000 to current year + 1 (for planning purposes)
-        if (surveyYear >= 2000 && surveyYear <= currentYear + 1) {
-          // Trigger annual statistics computation asynchronously (fire and forget)
-          // This ensures validation response is not blocked
-          this.triggerAnnualStatsComputation(surveyYear).catch((error) => {
-            // Log error but don't fail validation
-            console.error(
-              `Error computing annual statistics for year ${surveyYear} after validation:`,
-              error,
-            );
-          });
-        } else {
-          console.warn(
-            `Skipping annual stats computation: Survey year ${surveyYear} is outside valid range (2000-${currentYear + 1})`,
+    // Trigger annual statistics computation for the survey's year
+    const survey = await this.surveyRepository.findByPk(surveyEA.surveyId, {
+      attributes: ['id', 'year'],
+    });
+
+    if (survey) {
+      const surveyYear = survey.year;
+      const currentYear = new Date().getFullYear();
+
+      // Only trigger stats computation if survey year is valid
+      if (surveyYear >= 2000 && surveyYear <= currentYear + 1) {
+        // Trigger annual statistics computation asynchronously (fire and forget)
+        this.triggerAnnualStatsComputation(surveyYear).catch((error) => {
+          console.error(
+            `Error computing annual statistics for year ${surveyYear} after publishing:`,
+            error,
           );
-        }
+        });
+      } else {
+        console.warn(
+          `Skipping annual stats computation: Survey year ${surveyYear} is outside valid range (2000-${currentYear + 1})`,
+        );
       }
     }
 
@@ -412,44 +416,136 @@ export class SurveyEnumerationAreaService {
   }
 
   /**
-   * Trigger annual statistics computation asynchronously for a specific year
-   * Called after successful validation to update statistics
-   * @param year - The survey year to compute statistics for
+   * Bulk publish sampled data for multiple enumeration areas (Admin only)
+   * @param bulkPublishDto - Bulk publishing data
    */
-  private async triggerAnnualStatsComputation(year: number): Promise<void> {
-    try {
-      // First compute EA-level stats for the survey year
-      await this.eaAnnualStatsService.computeYearStats(year);
-      
-      // Then aggregate up the hierarchy for that year
-      await this.dzongkhagAnnualStatsService.computeAnnualStatisticsForYear(year);
-    } catch (error) {
-      console.error(`Error in annual statistics computation for year ${year}:`, error);
-      throw error;
+  async bulkPublish(bulkPublishDto: BulkPublishDto) {
+    const whereClause: any = {
+      surveyId: bulkPublishDto.surveyId,
+      isSampled: true,
+      isPublished: false,
+    };
+
+    if (
+      bulkPublishDto.enumerationAreaIds &&
+      bulkPublishDto.enumerationAreaIds.length > 0
+    ) {
+      whereClause.id = bulkPublishDto.enumerationAreaIds;
     }
-  }
 
-  /**
-   * Check if all enumeration areas are validated and update survey flag
-   * @param surveyId
-   */
-  private async updateSurveyValidationStatus(surveyId: number): Promise<void> {
-    const stats = await this.getSubmissionStatistics(surveyId);
+    const surveyEAs = await this.surveyEnumerationAreaRepository.findAll({
+      where: whereClause,
+      attributes: ['id', 'surveyId'],
+    });
 
-    // Update survey isFullyValidated flag
-    const survey = await this.surveyRepository.findByPk(surveyId);
+    if (surveyEAs.length === 0) {
+      throw new BadRequestException(
+        'No enumeration areas found that are sampled and ready for publishing',
+      );
+    }
+
+    // Publish all in a transaction
+    const publishedIds: number[] = [];
+    for (const surveyEA of surveyEAs) {
+      surveyEA.isPublished = true;
+      surveyEA.publishedBy = bulkPublishDto.publishedBy;
+      surveyEA.publishedDate = new Date();
+      await surveyEA.save();
+      publishedIds.push(surveyEA.id);
+    }
+
+    // Trigger annual statistics computation once for the survey's year
+    const survey = await this.surveyRepository.findByPk(bulkPublishDto.surveyId, {
+      attributes: ['id', 'year'],
+    });
+
     if (survey) {
-      survey.isFullyValidated =
-        stats.total > 0 && stats.validated === stats.total;
-      await survey.save();
+      const surveyYear = survey.year;
+      const currentYear = new Date().getFullYear();
+
+      if (surveyYear >= 2000 && surveyYear <= currentYear + 1) {
+        this.triggerAnnualStatsComputation(surveyYear).catch((error) => {
+          console.error(
+            `Error computing annual statistics for year ${surveyYear} after bulk publishing:`,
+            error,
+          );
+        });
+      }
     }
+
+    return {
+      success: true,
+      message: `Successfully published ${publishedIds.length} enumeration area(s)`,
+      publishedCount: publishedIds.length,
+      publishedIds,
+    };
   }
 
   /**
-   * Get submission statistics for a survey
-   * @param surveyId
+   * Get enumeration areas that are enumerated and ready for sampling
+   * @param surveyId - Survey ID
    */
-  async getSubmissionStatistics(surveyId: number) {
+  async getEnumeratedForSampling(surveyId: number) {
+    return await this.surveyEnumerationAreaRepository.findAll({
+      where: {
+        surveyId,
+        isEnumerated: true,
+        isSampled: false,
+      },
+      include: [
+        {
+          model: Survey,
+          attributes: ['id', 'name', 'year'],
+        },
+        {
+          model: EnumerationArea,
+          attributes: ['id', 'name', 'areaCode'],
+        },
+        {
+          model: User,
+          as: 'enumerator',
+          attributes: ['id', 'name'],
+        },
+      ],
+      order: [['enumerationDate', 'ASC']],
+    });
+  }
+
+  /**
+   * Get enumeration areas that are sampled and ready for publishing
+   * @param surveyId - Survey ID
+   */
+  async getReadyForPublishing(surveyId: number) {
+    return await this.surveyEnumerationAreaRepository.findAll({
+      where: {
+        surveyId,
+        isSampled: true,
+        isPublished: false,
+      },
+      include: [
+        {
+          model: Survey,
+          attributes: ['id', 'name', 'year'],
+        },
+        {
+          model: EnumerationArea,
+          attributes: ['id', 'name', 'areaCode'],
+        },
+        {
+          model: User,
+          as: 'sampler',
+          attributes: ['id', 'name'],
+        },
+      ],
+      order: [['sampledDate', 'ASC']],
+    });
+  }
+
+  /**
+   * Get sampling status and progress for a survey
+   * @param surveyId - Survey ID
+   */
+  async getSamplingStatus(surveyId: number) {
     const hierarchicalData = await this.findBySurveyWithEnumerationAreas(
       surveyId,
     );
@@ -469,21 +565,62 @@ export class SurveyEnumerationAreaService {
     }
 
     const total = allSurveyEAs.length;
-    const submitted = allSurveyEAs.filter((ea) => ea.isSubmitted).length;
-    const validated = allSurveyEAs.filter((ea) => ea.isValidated).length;
-    const pending = total - submitted;
-    const awaitingValidation = submitted - validated;
+    const enumerated = allSurveyEAs.filter((ea) => ea.isEnumerated).length;
+    const sampled = allSurveyEAs.filter((ea) => ea.isSampled).length;
+    const published = allSurveyEAs.filter((ea) => ea.isPublished).length;
+    const readyForSampling = enumerated - sampled;
+    const readyForPublishing = sampled - published;
 
     return {
       total,
-      submitted,
-      validated,
-      pending,
-      awaitingValidation,
-      submissionRate:
-        total > 0 ? ((submitted / total) * 100).toFixed(2) : '0.00',
-      validationRate:
-        total > 0 ? ((validated / total) * 100).toFixed(2) : '0.00',
+      enumerated,
+      sampled,
+      published,
+      readyForSampling,
+      readyForPublishing,
+      enumerationRate:
+        total > 0 ? ((enumerated / total) * 100).toFixed(2) : '0.00',
+      samplingRate:
+        enumerated > 0 ? ((sampled / enumerated) * 100).toFixed(2) : '0.00',
+      publishingRate:
+        sampled > 0 ? ((published / sampled) * 100).toFixed(2) : '0.00',
+    };
+  }
+
+  /**
+   * Trigger annual statistics computation asynchronously for a specific year
+   * Called after successful publishing to update statistics
+   * @param year - The survey year to compute statistics for
+   */
+  private async triggerAnnualStatsComputation(year: number): Promise<void> {
+    try {
+      // First compute EA-level stats for the survey year
+      await this.eaAnnualStatsService.computeYearStats(year);
+      
+      // Then aggregate up the hierarchy for that year
+      await this.dzongkhagAnnualStatsService.computeAnnualStatisticsForYear(year);
+    } catch (error) {
+      console.error(`Error in annual statistics computation for year ${year}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get submission statistics for a survey (kept for backward compatibility)
+   * @param surveyId
+   */
+  async getSubmissionStatistics(surveyId: number) {
+    const status = await this.getSamplingStatus(surveyId);
+
+    // Map to old format for backward compatibility
+    return {
+      total: status.total,
+      submitted: status.enumerated,
+      validated: status.published,
+      pending: status.total - status.enumerated,
+      awaitingValidation: status.readyForPublishing,
+      submissionRate: status.enumerationRate,
+      validationRate: status.publishingRate,
     };
   }
 

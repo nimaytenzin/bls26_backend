@@ -501,21 +501,26 @@ export class SurveyService {
     // Get all survey enumeration areas for this survey
     const surveyEAs = await this.surveyEnumerationAreaRepository.findAll({
       where: { surveyId },
-      attributes: ['id', 'enumerationAreaId', 'isSubmitted', 'isValidated'],
+      attributes: ['id', 'enumerationAreaId', 'isEnumerated', 'isSampled', 'isPublished'],
     });
 
     const totalEnumerationAreas = surveyEAs.length;
-    const submittedEAs = surveyEAs.filter((ea) => ea.isSubmitted).length;
-    const validatedEAs = surveyEAs.filter((ea) => ea.isValidated).length;
+    const enumeratedEAs = surveyEAs.filter((ea) => ea.isEnumerated).length;
+    const sampledEAs = surveyEAs.filter((ea) => ea.isSampled).length;
+    const publishedEAs = surveyEAs.filter((ea) => ea.isPublished).length;
 
-    // Calculate submission and validation percentages
-    const submissionPercentage =
+    // Calculate enumeration, sampling, and publishing percentages
+    const enumerationPercentage =
       totalEnumerationAreas > 0
-        ? ((submittedEAs / totalEnumerationAreas) * 100).toFixed(2)
+        ? ((enumeratedEAs / totalEnumerationAreas) * 100).toFixed(2)
         : '0.00';
-    const validationPercentage =
-      totalEnumerationAreas > 0
-        ? ((validatedEAs / totalEnumerationAreas) * 100).toFixed(2)
+    const samplingPercentage =
+      enumeratedEAs > 0
+        ? ((sampledEAs / enumeratedEAs) * 100).toFixed(2)
+        : '0.00';
+    const publishingPercentage =
+      sampledEAs > 0
+        ? ((publishedEAs / sampledEAs) * 100).toFixed(2)
         : '0.00';
 
     // Get enumeration area IDs
@@ -590,14 +595,16 @@ export class SurveyService {
       surveyName: survey.name,
       surveyStatus: survey.status,
       surveyYear: survey.year,
-      isFullyValidated: survey.isFullyValidated,
+      isFullyPublished: survey.isFullyValidated, // TODO: Rename entity field to isFullyPublished after migration
       totalDzongkhags,
       totalEnumerationAreas,
-      submittedEnumerationAreas: submittedEAs,
-      validatedEnumerationAreas: validatedEAs,
-      pendingEnumerationAreas: totalEnumerationAreas - submittedEAs,
-      submissionPercentage,
-      validationPercentage,
+      enumeratedEnumerationAreas: enumeratedEAs,
+      sampledEnumerationAreas: sampledEAs,
+      publishedEnumerationAreas: publishedEAs,
+      pendingEnumerationAreas: totalEnumerationAreas - enumeratedEAs,
+      enumerationPercentage,
+      samplingPercentage,
+      publishingPercentage,
       totalEnumerators,
       totalHouseholds,
       totalMale,
@@ -627,18 +634,21 @@ export class SurveyService {
       throw new Error(`Survey with ID ${surveyId} not found`);
     }
 
-    // Step 1: Get all survey enumeration areas with submission/validation status
+    // Step 1: Get all survey enumeration areas with workflow status
     const surveyEAs = await this.surveyEnumerationAreaRepository.findAll({
       where: { surveyId: surveyId },
       attributes: [
         'id',
         'enumerationAreaId',
-        'isSubmitted',
-        'submittedBy',
-        'submissionDate',
-        'isValidated',
-        'validatedBy',
-        'validationDate',
+        'isEnumerated',
+        'enumeratedBy',
+        'enumerationDate',
+        'isSampled',
+        'sampledBy',
+        'sampledDate',
+        'isPublished',
+        'publishedBy',
+        'publishedDate',
       ],
     });
 
@@ -719,12 +729,15 @@ export class SurveyService {
         sea.enumerationAreaId,
         {
           id: sea.id,
-          isSubmitted: sea.isSubmitted,
-          submittedBy: sea.submittedBy,
-          submissionDate: sea.submissionDate,
-          isValidated: sea.isValidated,
-          validatedBy: sea.validatedBy,
-          validationDate: sea.validationDate,
+          isEnumerated: sea.isEnumerated,
+          enumeratedBy: sea.enumeratedBy,
+          enumerationDate: sea.enumerationDate,
+          isSampled: sea.isSampled,
+          sampledBy: sea.sampledBy,
+          sampledDate: sea.sampledDate,
+          isPublished: sea.isPublished,
+          publishedBy: sea.publishedBy,
+          publishedDate: sea.publishedDate,
         },
       ]),
     );
@@ -811,12 +824,15 @@ export class SurveyService {
         areaCode: ea.areaCode,
         surveyEnumerationAreaId: surveyEAId,
         totalHouseholdCount: householdCount,
-        isSubmitted: seaData?.isSubmitted || false,
-        submittedBy: seaData?.submittedBy || null,
-        submissionDate: seaData?.submissionDate || null,
-        isValidated: seaData?.isValidated || false,
-        validatedBy: seaData?.validatedBy || null,
-        validationDate: seaData?.validationDate || null,
+        isEnumerated: seaData?.isEnumerated || false,
+        enumeratedBy: seaData?.enumeratedBy || null,
+        enumerationDate: seaData?.enumerationDate || null,
+        isSampled: seaData?.isSampled || false,
+        sampledBy: seaData?.sampledBy || null,
+        sampledDate: seaData?.sampledDate || null,
+        isPublished: seaData?.isPublished || false,
+        publishedBy: seaData?.publishedBy || null,
+        publishedDate: seaData?.publishedDate || null,
       });
     });
 

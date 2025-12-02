@@ -26,9 +26,9 @@ export class SurveyStatisticsResponseDto {
   surveyYear: number;
 
   /**
-   * Whether all enumeration areas have been validated
+   * Whether all enumeration areas have been published
    */
-  isFullyValidated: boolean;
+  isFullyPublished: boolean;
 
   /**
    * Geographic Coverage
@@ -45,33 +45,43 @@ export class SurveyStatisticsResponseDto {
   totalEnumerationAreas: number;
 
   /**
-   * Submission Progress
+   * Workflow Progress
    */
 
   /**
-   * Number of enumeration areas that have been submitted
+   * Number of enumeration areas that have been enumerated
    */
-  submittedEnumerationAreas: number;
+  enumeratedEnumerationAreas: number;
 
   /**
-   * Number of enumeration areas that have been validated
+   * Number of enumeration areas that have been sampled
    */
-  validatedEnumerationAreas: number;
+  sampledEnumerationAreas: number;
 
   /**
-   * Number of enumeration areas pending submission
+   * Number of enumeration areas that have been published
+   */
+  publishedEnumerationAreas: number;
+
+  /**
+   * Number of enumeration areas pending enumeration
    */
   pendingEnumerationAreas: number;
 
   /**
-   * Percentage of enumeration areas submitted (as string with 2 decimal places)
+   * Percentage of enumeration areas enumerated (as string with 2 decimal places)
    */
-  submissionPercentage: string;
+  enumerationPercentage: string;
 
   /**
-   * Percentage of enumeration areas validated (as string with 2 decimal places)
+   * Percentage of enumerated areas sampled (as string with 2 decimal places)
    */
-  validationPercentage: string;
+  samplingPercentage: string;
+
+  /**
+   * Percentage of sampled areas published (as string with 2 decimal places)
+   */
+  publishingPercentage: string;
 
   /**
    * Resource Allocation

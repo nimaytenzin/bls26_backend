@@ -1,6 +1,6 @@
 /**
  * DTO for Survey Submission Status Response
- * Returns enumeration areas grouped by geographic hierarchy with submission details
+ * Returns enumeration areas grouped by geographic hierarchy with workflow status details
  */
 
 export class EnumerationAreaSubmissionDto {
@@ -9,10 +9,12 @@ export class EnumerationAreaSubmissionDto {
   areaCode: string;
   areaSqKm?: number;
   surveyEnumerationAreaId: number;
-  isSubmitted: boolean;
-  isValidated: boolean;
-  submissionDate?: Date;
-  validationDate?: Date;
+  isEnumerated: boolean;
+  isSampled: boolean;
+  isPublished: boolean;
+  enumerationDate?: Date;
+  sampledDate?: Date;
+  publishedDate?: Date;
   householdCount: number;
   totalMale?: number;
   totalFemale?: number;
@@ -27,8 +29,9 @@ export class SubAdministrativeZoneSubmissionDto {
   enumerationAreas: EnumerationAreaSubmissionDto[];
   summary: {
     totalEnumerationAreas: number;
-    submittedEnumerationAreas: number;
-    validatedEnumerationAreas: number;
+    enumeratedEnumerationAreas: number;
+    sampledEnumerationAreas: number;
+    publishedEnumerationAreas: number;
     totalHouseholds: number;
     totalPopulation: number;
   };
@@ -43,8 +46,9 @@ export class AdministrativeZoneSubmissionDto {
   summary: {
     totalSubAdministrativeZones: number;
     totalEnumerationAreas: number;
-    submittedEnumerationAreas: number;
-    validatedEnumerationAreas: number;
+    enumeratedEnumerationAreas: number;
+    sampledEnumerationAreas: number;
+    publishedEnumerationAreas: number;
     totalHouseholds: number;
     totalPopulation: number;
   };
@@ -60,8 +64,9 @@ export class DzongkhagSubmissionDto {
     totalAdministrativeZones: number;
     totalSubAdministrativeZones: number;
     totalEnumerationAreas: number;
-    submittedEnumerationAreas: number;
-    validatedEnumerationAreas: number;
+    enumeratedEnumerationAreas: number;
+    sampledEnumerationAreas: number;
+    publishedEnumerationAreas: number;
     totalHouseholds: number;
     totalPopulation: number;
   };
@@ -81,11 +86,13 @@ export class SurveySubmissionStatusResponseDto {
     totalAdministrativeZones: number;
     totalSubAdministrativeZones: number;
     totalEnumerationAreas: number;
-    submittedEnumerationAreas: number;
-    validatedEnumerationAreas: number;
+    enumeratedEnumerationAreas: number;
+    sampledEnumerationAreas: number;
+    publishedEnumerationAreas: number;
     pendingEnumerationAreas: number;
-    submissionPercentage: string;
-    validationPercentage: string;
+    enumerationPercentage: string;
+    samplingPercentage: string;
+    publishingPercentage: string;
     totalHouseholds: number;
     totalMale: number;
     totalFemale: number;

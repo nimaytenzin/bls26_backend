@@ -192,13 +192,13 @@ export class EAAnnualStatsService {
     let recordsProcessed = 0;
     let recordsWithData = 0;
 
-    // Step 2 & 3: For each EA, find latest validated survey and aggregate data
+    // Step 2 & 3: For each EA, find latest published survey and aggregate data
     for (const ea of allEAs) {
-      // Find the latest validated survey enumeration area for this EA in current year
+      // Find the latest published survey enumeration area for this EA in current year
       const latestSurveyEA = await SurveyEnumerationArea.findOne({
         where: {
           enumerationAreaId: ea.id,
-          isValidated: true,
+          isPublished: true,
         },
         include: [
           {
@@ -211,7 +211,7 @@ export class EAAnnualStatsService {
           },
         ],
         order: [
-          ['validationDate', 'DESC NULLS LAST'],
+          ['publishedDate', 'DESC NULLS LAST'],
           ['updatedAt', 'DESC'],
         ],
         limit: 1,
@@ -221,7 +221,7 @@ export class EAAnnualStatsService {
       let totalMale = 0;
       let totalFemale = 0;
 
-      // Step 3: If we found a validated survey, aggregate household data
+      // Step 3: If we found a published survey, aggregate household data
       if (latestSurveyEA) {
         const householdListings =
           await SurveyEnumerationAreaHouseholdListing.findAll({
@@ -310,7 +310,7 @@ export class EAAnnualStatsService {
       const latestSurveyEA = await SurveyEnumerationArea.findOne({
         where: {
           enumerationAreaId: ea.id,
-          isValidated: true,
+          isPublished: true,
         },
         include: [
           {
@@ -323,7 +323,7 @@ export class EAAnnualStatsService {
           },
         ],
         order: [
-          ['validationDate', 'DESC NULLS LAST'],
+          ['publishedDate', 'DESC NULLS LAST'],
           ['updatedAt', 'DESC'],
         ],
         limit: 1,
@@ -333,7 +333,7 @@ export class EAAnnualStatsService {
       let totalMale = 0;
       let totalFemale = 0;
 
-      // Step 3: If we found a validated survey, aggregate household data
+      // Step 3: If we found a published survey, aggregate household data
       if (latestSurveyEA) {
         const householdListings =
           await SurveyEnumerationAreaHouseholdListing.findAll({

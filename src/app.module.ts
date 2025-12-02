@@ -12,6 +12,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { BuildingsModule } from './modules/buildings/buildings.module';
 import { SurveyEnumerationAreaModule } from './modules/survey/survey-enumeration-area/survey-enumeration-area.module';
 import { SurveyEnumerationAreaHouseholdListingModule } from './modules/survey/survey-enumeration-area-household-listing/survey-enumeration-area-household-listing.module';
+import { SurveyEnumerationAreaStructureModule } from './modules/survey/survey-enumeration-area-structure/survey-enumeration-area-structure.module';
 import { SurveyEnumeratorModule } from './modules/survey/survey-enumerator/survey-enumerator.module';
 import { EnumeratorRoutesModule } from './modules/enumerator-routes/enumerator-routes.module';
 import { EAAnnualStatsModule } from './modules/annual statistics/ea-annual-statistics/ea-annual-stats.module';
@@ -33,6 +34,7 @@ import { LocationDownloadModule } from './modules/location/location-download/loc
     SurveyModule,
     ReportsModule,
     SurveyEnumerationAreaModule,
+    SurveyEnumerationAreaStructureModule,
     SurveyEnumerationAreaHouseholdListingModule,
     SurveyEnumeratorModule,
     EnumeratorRoutesModule,

@@ -4,8 +4,8 @@ export class CreateSurveyEnumerationAreaHouseholdListingDto {
   @IsInt()
   surveyEnumerationAreaId: number;
 
-  @IsString()
-  structureNumber: string;
+  @IsInt()
+  structureId: number;
 
   @IsString()
   householdIdentification: string;

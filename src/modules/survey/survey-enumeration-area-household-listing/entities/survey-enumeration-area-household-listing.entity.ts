@@ -8,6 +8,7 @@ import {
 } from 'sequelize-typescript';
 import { SurveyEnumerationArea } from '../../survey-enumeration-area/entities/survey-enumeration-area.entity';
 import { User } from '../../../auth/entities/user.entity';
+import { SurveyEnumerationAreaStructure } from '../../survey-enumeration-area-structure/entities/survey-enumeration-area-structure.entity';
 
 /**
  * Survey Enumeration Area Household Listing
@@ -29,8 +30,8 @@ import { User } from '../../../auth/entities/user.entity';
       name: 'idx_survey_ea',
     },
     {
-      fields: ['structureNumber'],
-      name: 'idx_structure_number',
+      fields: ['structureId'],
+      name: 'idx_structure_id',
     },
     {
       fields: ['householdIdentification'],
@@ -52,11 +53,12 @@ export class SurveyEnumerationAreaHouseholdListing extends Model {
   })
   surveyEnumerationAreaId: number;
 
+  @ForeignKey(() => SurveyEnumerationAreaStructure)
   @Column({
-    type: DataType.STRING,
-    allowNull: false,
+    type: DataType.INTEGER,
+    allowNull: true, // Nullable initially for migration, will be made required after migration
   })
-  structureNumber: string;
+  structureId: number;
 
   @Column({
     type: DataType.STRING,
@@ -112,6 +114,9 @@ export class SurveyEnumerationAreaHouseholdListing extends Model {
   // Relationships
   @BelongsTo(() => SurveyEnumerationArea)
   surveyEnumerationArea: SurveyEnumerationArea;
+
+  @BelongsTo(() => SurveyEnumerationAreaStructure)
+  structure: SurveyEnumerationAreaStructure;
 
   @BelongsTo(() => User)
   submitter: User;

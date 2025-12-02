@@ -157,4 +157,25 @@ export class EnumeratorRoutesController {
     const userId = req.user.id;
     return this.enumeratorRoutesService.deleteHouseholdListing(userId, +id);
   }
+
+  /**
+   * Get sampling results for an enumeration area with structure geolocation
+   * @param surveyId - Survey ID
+   * @param surveyEnumerationAreaId - Survey Enumeration Area ID
+   * @access Enumerator only
+   */
+  @Get('surveys/:surveyId/enumeration-areas/:surveyEnumerationAreaId/sampling-results')
+  @Roles(UserRole.ENUMERATOR)
+  async getSamplingResults(
+    @Request() req,
+    @Param('surveyId') surveyId: string,
+    @Param('surveyEnumerationAreaId') surveyEnumerationAreaId: string,
+  ) {
+    const enumeratorId = req.user.id;
+    return this.enumeratorRoutesService.getSamplingResultsForEnumerator(
+      enumeratorId,
+      +surveyId,
+      +surveyEnumerationAreaId,
+    );
+  }
 }

@@ -24,6 +24,7 @@ import { DzongkhagAnnualStats } from 'src/modules/annual statistics/dzongkhag-an
 import { SurveySamplingConfig } from 'src/modules/sampling/entities/survey-sampling-config.entity';
 import { SurveyEnumerationAreaSampling } from 'src/modules/sampling/entities/survey-enumeration-area-sampling.entity';
 import { SurveyEnumerationAreaHouseholdSample } from 'src/modules/sampling/entities/survey-enumeration-area-household-sample.entity';
+import { SurveyEnumerationAreaStructure } from 'src/modules/survey/survey-enumeration-area-structure/entities/survey-enumeration-area-structure.entity';
 
 export const databaseProviders = [
   {
@@ -31,19 +32,44 @@ export const databaseProviders = [
     useFactory: async () => {
       let config;
 
+      let environment: string;
       switch (process.env.NODE_ENV) {
         case DEVELOPMENT:
           config = databaseConfig.development;
+          environment = 'DEVELOPMENT';
           break;
         case TEST:
           config = databaseConfig.test;
+          environment = 'TEST';
           break;
         case PRODUCTION:
           config = databaseConfig.production;
+          environment = 'PRODUCTION';
           break;
         default:
           config = databaseConfig.development;
+          environment = 'DEVELOPMENT (default)';
       }
+
+      // Log database configuration (masking sensitive information)
+      console.log('========================================');
+      console.log('📊 DATABASE CONFIGURATION');
+      console.log('========================================');
+      console.log(`Environment: ${environment}`);
+      console.log(`NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
+      if (config.urlDatabase) {
+        console.log(`Connection: Using URL (masked)`);
+      } else {
+        console.log(`Database: ${config.database || 'not set'}`);
+        console.log(`Host: ${config.host || 'not set'}`);
+        console.log(`Port: ${config.port || 'not set'}`);
+        console.log(`Username: ${config.username || 'not set'}`);
+        console.log(`Password: ${config.password ? '***' : 'not set'}`);
+      }
+      console.log(`Dialect: ${config.dialect || 'not set'}`);
+      console.log(`Logging: ${config.logging !== undefined ? config.logging : 'not set'}`);
+      console.log('========================================');
+
       const sequelize = new Sequelize(config);
       sequelize.addModels([
         User,
@@ -55,6 +81,7 @@ export const databaseProviders = [
 
         Survey,
         SurveyEnumerationArea,
+        SurveyEnumerationAreaStructure,
         SurveyEnumerationAreaHouseholdListing,
         SurveyEnumerator,
         Building,

@@ -16,6 +16,7 @@ import { SurveyEnumerationAreaHouseholdListing } from './entities/survey-enumera
 import { SurveyEnumerationArea } from '../survey-enumeration-area/entities/survey-enumeration-area.entity';
 import { Survey } from '../survey/entities/survey.entity';
 import { EnumerationArea } from '../../location/enumeration-area/entities/enumeration-area.entity';
+import { SurveyEnumerationAreaStructure } from '../survey-enumeration-area-structure/entities/survey-enumeration-area-structure.entity';
 import { SubAdministrativeZone } from '../../location/sub-administrative-zone/entities/sub-administrative-zone.entity';
 import { AdministrativeZone } from '../../location/administrative-zone/entities/administrative-zone.entity';
 import { Dzongkhag } from '../../location/dzongkhag/entities/dzongkhag.entity';
@@ -38,6 +39,8 @@ export class SurveyEnumerationAreaHouseholdListingService {
     private readonly surveyRepository: typeof Survey,
     @Inject('ENUMERATION_AREA_REPOSITORY')
     private readonly enumerationAreaRepository: typeof EnumerationArea,
+    @Inject('SURVEY_ENUMERATION_AREA_STRUCTURE_REPOSITORY')
+    private readonly structureRepository: typeof SurveyEnumerationAreaStructure,
   ) {}
 
   /**
@@ -79,6 +82,10 @@ export class SurveyEnumerationAreaHouseholdListingService {
           model: SurveyEnumerationArea,
           attributes: ['id', 'surveyId', 'enumerationAreaId'],
         },
+        {
+          model: SurveyEnumerationAreaStructure,
+          attributes: ['id', 'structureNumber', 'latitude', 'longitude'],
+        },
       ],
       order: [['householdSerialNumber', 'ASC']],
     });
@@ -99,20 +106,13 @@ export class SurveyEnumerationAreaHouseholdListingService {
           as: 'submitter',
         },
         {
-          model: SurveyEnumerationArea,
-          include: [
-            {
-              model: User,
-              as: 'submitter',
-              attributes: ['name', 'phoneNumber', 'cid', 'id'],
-            },
-            {
-              model: User,
-              as: 'validator',
-              attributes: ['name', 'phoneNumber', 'cid', 'id'],
-            },
-          ],
+          model: SurveyEnumerationAreaStructure,
+          attributes: ['id', 'structureNumber', 'latitude', 'longitude'],
         },
+      
+        {
+          model:SurveyEnumerationAreaStructure
+        }
       ],
     });
   }
@@ -139,6 +139,8 @@ export class SurveyEnumerationAreaHouseholdListingService {
       : [['createdAt', 'DESC']];
 
     // Fetch data with count
+    // Note: SurveyEnumerationAreaStructure is excluded to avoid Sequelize eager loading error
+    // with SurveyEnumerationArea's multiple User associations (enumerator, sampler, publisher)
     const { rows, count } = await this.householdListingRepository.findAndCountAll(
       {
         where: { surveyEnumerationAreaId },
@@ -146,22 +148,7 @@ export class SurveyEnumerationAreaHouseholdListingService {
           {
             model: User,
             as: 'submitter',
-            attributes: ['id', 'name', 'cid', 'phoneNumber'],
-          },
-          {
-            model: SurveyEnumerationArea,
-            include: [
-              {
-                model: User,
-                as: 'submitter',
-                attributes: ['name', 'phoneNumber', 'cid', 'id'],
-              },
-              {
-                model: User,
-                as: 'validator',
-                attributes: ['name', 'phoneNumber', 'cid', 'id'],
-              },
-            ],
+            attributes: ['id', 'name', 'phoneNumber', 'cid'],
           },
         ],
         order,
@@ -473,13 +460,25 @@ export class SurveyEnumerationAreaHouseholdListingService {
     const defaultRemarks =
       dto.remarks || 'No data available - Historical survey entry';
 
-    // Create blank entries
-    const listingsToCreate: any[] = [];
+    // Create structures and household listings
+    const created: SurveyEnumerationAreaHouseholdListing[] = [];
+    
     for (let i = 0; i < dto.count; i++) {
       const serialNumber = nextSerialNumber + i;
-      listingsToCreate.push({
+      const structureNumber = `STR-${serialNumber.toString().padStart(4, '0')}`;
+      
+      // Create structure first
+      const structure = await this.structureRepository.create({
         surveyEnumerationAreaId,
-        structureNumber: `STR-${serialNumber.toString().padStart(4, '0')}`,
+        structureNumber,
+        latitude: null,
+        longitude: null,
+      } as any);
+
+      // Create household listing linked to structure
+      const listing = await this.householdListingRepository.create({
+        surveyEnumerationAreaId,
+        structureId: structure.id,
         householdIdentification: `HH-${serialNumber.toString().padStart(4, '0')}`,
         householdSerialNumber: serialNumber,
         nameOfHOH: 'Not Available',
@@ -488,13 +487,10 @@ export class SurveyEnumerationAreaHouseholdListingService {
         phoneNumber: null,
         remarks: defaultRemarks,
         submittedBy: userId,
-      });
-    }
+      } as any);
 
-    // Bulk create all entries
-    const created = await this.householdListingRepository.bulkCreate(
-      listingsToCreate,
-    );
+      created.push(listing);
+    }
 
     return {
       success: true,
@@ -528,6 +524,7 @@ export class SurveyEnumerationAreaHouseholdListingService {
       'surveyEnumerationAreaId',
       'surveyId',
       'enumerationAreaId',
+      'structureId',
       'structureNumber',
       'householdIdentification',
       'householdSerialNumber',
@@ -543,6 +540,7 @@ export class SurveyEnumerationAreaHouseholdListingService {
       surveyEA.id,
       surveyEA.surveyId,
       surveyEA.enumerationAreaId,
+      '', // structureId
       '', // structureNumber
       '', // householdIdentification
       '', // householdSerialNumber
@@ -574,14 +572,12 @@ export class SurveyEnumerationAreaHouseholdListingService {
         },
         {
           model: User,
-          as: 'submitter',
+          as: 'publisher',
           attributes: ['id', 'name', 'cid', 'phoneNumber'],
         },
         {
-          model: User,
-          as: 'validator',
-          attributes: ['id', 'name', 'cid', 'phoneNumber'],
-        },
+          model:SurveyEnumerationAreaStructure
+        }
       ],
       order: [[{ model: Survey, as: 'survey' }, 'startDate', 'DESC']],
     });
@@ -614,9 +610,9 @@ export class SurveyEnumerationAreaHouseholdListingService {
         };
       }
 
-      // Step 4: Check validation status
-      if (surveyEA.isValidated) {
-        // VALIDATED - Fetch household listings
+      // Step 4: Check publishing status
+      if (surveyEA.isPublished) {
+        // PUBLISHED - Fetch household listings
         const households = await this.householdListingRepository.findAll({
           where: { surveyEnumerationAreaId: surveyEA.id },
           order: [['householdSerialNumber', 'ASC']],
@@ -631,7 +627,7 @@ export class SurveyEnumerationAreaHouseholdListingService {
         if (!households || households.length === 0) {
           return {
             status: CurrentHouseholdListingStatus.VALIDATED_BUT_EMPTY,
-            message: `Survey "${surveyEA.survey.name}" (${surveyEA.survey.year}) is validated but contains no household listings for this enumeration area`,
+            message: `Survey "${surveyEA.survey.name}" (${surveyEA.survey.year}) is published but contains no household listings for this enumeration area`,
             data: {
               survey: surveyEA.survey,
               enumerationArea: enumerationArea,
@@ -643,7 +639,7 @@ export class SurveyEnumerationAreaHouseholdListingService {
                 totalFemale: 0,
                 totalPopulation: 0,
                 averageHouseholdSize: '0.00',
-                validatedDate: surveyEA.validationDate,
+                validatedDate: surveyEA.publishedDate,
               },
             },
             metadata: {
@@ -666,10 +662,10 @@ export class SurveyEnumerationAreaHouseholdListingService {
 
         console.log(surveyEA);
 
-        // SUCCESS - Return validated data
+        // SUCCESS - Return published data
         return {
           status: CurrentHouseholdListingStatus.SUCCESS,
-          message: `Found validated household data from survey "${surveyEA.survey.name}" (${surveyEA.survey.year})`,
+          message: `Found published household data from survey "${surveyEA.survey.name}" (${surveyEA.survey.year})`,
           data: {
             survey: surveyEA.survey,
             surveyEnumerationArea: surveyEA,
@@ -684,32 +680,26 @@ export class SurveyEnumerationAreaHouseholdListingService {
                 totalHouseholds > 0
                   ? (totalPopulation / totalHouseholds).toFixed(2)
                   : '0.00',
-              validatedDate: surveyEA.validationDate,
+              validatedDate: surveyEA.publishedDate,
             },
           },
           metadata: {
             totalSurveysChecked,
           },
         };
-      } else if (surveyEA.isSubmitted && !surveyEA.isValidated) {
-        // PENDING VALIDATION - Skip and continue to next survey
-        if (latestSurveyInfo && !latestSurveyInfo.reason) {
-          latestSurveyInfo.reason = 'Data submitted but pending validation';
-        }
-        continue;
       } else {
-        // NOT SUBMITTED - Skip and continue to next survey
+        // NOT PUBLISHED - Skip and continue to next survey
         if (latestSurveyInfo && !latestSurveyInfo.reason) {
-          latestSurveyInfo.reason = 'Data not submitted';
+          latestSurveyInfo.reason = 'Data not published';
         }
         continue;
       }
     }
 
-    // Step 5: No validated data found in any survey
+    // Step 5: No published data found in any survey
     return {
       status: CurrentHouseholdListingStatus.NO_DATA,
-      message: `All ${totalSurveysChecked} survey(s) checked, but none have validated household data for this enumeration area`,
+      message: `All ${totalSurveysChecked} survey(s) checked, but none have published household data for this enumeration area`,
       metadata: {
         latestSurvey: latestSurveyInfo,
         totalSurveysChecked,
@@ -751,6 +741,10 @@ export class SurveyEnumerationAreaHouseholdListingService {
           model: User,
           as: 'submitter',
           attributes: ['id', 'name', 'cid', 'phoneNumber', 'emailAddress'],
+        },
+        {
+          model: SurveyEnumerationAreaStructure,
+          attributes: ['id', 'structureNumber', 'latitude', 'longitude'],
         },
       ],
       order: [
@@ -861,7 +855,6 @@ export class SurveyEnumerationAreaHouseholdListingService {
         subAdminZoneCode,
         ea?.name || sea?.enumerationArea?.name || '',
         fullEaCode,
-        listing.structureNumber || '',
         listing.householdIdentification || '',
         listing.householdSerialNumber?.toString() || '',
         listing.nameOfHOH || '',
@@ -979,7 +972,17 @@ export class SurveyEnumerationAreaHouseholdListingService {
           },
           {
             model: User,
-            as: 'submitter',
+            as: 'enumerator',
+            attributes: ['id', 'name', 'cid', 'phoneNumber', 'emailAddress'],
+          },
+          {
+            model: User,
+            as: 'sampler',
+            attributes: ['id', 'name', 'cid', 'phoneNumber', 'emailAddress'],
+          },
+          {
+            model: User,
+            as: 'publisher',
             attributes: ['id', 'name', 'cid', 'phoneNumber', 'emailAddress'],
           },
         ],
@@ -1018,6 +1021,10 @@ export class SurveyEnumerationAreaHouseholdListingService {
           model: User,
           as: 'submitter',
           attributes: ['id', 'name', 'cid', 'phoneNumber', 'emailAddress'],
+        },
+        {
+          model: SurveyEnumerationAreaStructure,
+          attributes: ['id', 'structureNumber', 'latitude', 'longitude'],
         },
       ],
       order: [['householdSerialNumber', 'ASC']],
@@ -1079,7 +1086,6 @@ export class SurveyEnumerationAreaHouseholdListingService {
         subAdminZoneCode,
         ea?.name || '',
         fullEaCode,
-        listing.structureNumber || '',
         listing.householdIdentification || '',
         listing.householdSerialNumber?.toString() || '',
         listing.nameOfHOH || '',
@@ -1230,15 +1236,20 @@ export class SurveyEnumerationAreaHouseholdListingService {
     }
     metadata += `WORKFLOW STATUS\n`;
     metadata += `---------------\n`;
-    metadata += `Submitted: ${surveyEA.isSubmitted ? 'Yes' : 'No'}\n`;
-    if (surveyEA.isSubmitted && surveyEA.submitter) {
-      metadata += `Submitted By: ${surveyEA.submitter.name} (${surveyEA.submitter.cid || 'N/A'})\n`;
-      metadata += `Submission Date: ${surveyEA.submissionDate ? new Date(surveyEA.submissionDate).toISOString().split('T')[0] : 'N/A'}\n`;
+    metadata += `Enumerated: ${surveyEA.isEnumerated ? 'Yes' : 'No'}\n`;
+    if (surveyEA.isEnumerated && surveyEA.enumerator) {
+      metadata += `Enumerated By: ${surveyEA.enumerator.name} (${surveyEA.enumerator.cid || 'N/A'})\n`;
+      metadata += `Enumeration Date: ${surveyEA.enumerationDate ? new Date(surveyEA.enumerationDate).toISOString().split('T')[0] : 'N/A'}\n`;
     }
-    metadata += `Validated: ${surveyEA.isValidated ? 'Yes' : 'No'}\n`;
-    if (surveyEA.isValidated && surveyEA.validator) {
-      metadata += `Validated By: ${surveyEA.validator.name} (${surveyEA.validator.cid || 'N/A'})\n`;
-      metadata += `Validation Date: ${surveyEA.validationDate ? new Date(surveyEA.validationDate).toISOString().split('T')[0] : 'N/A'}\n`;
+    metadata += `Sampled: ${surveyEA.isSampled ? 'Yes' : 'No'}\n`;
+    if (surveyEA.isSampled && surveyEA.sampler) {
+      metadata += `Sampled By: ${surveyEA.sampler.name} (${surveyEA.sampler.cid || 'N/A'})\n`;
+      metadata += `Sampled Date: ${surveyEA.sampledDate ? new Date(surveyEA.sampledDate).toISOString().split('T')[0] : 'N/A'}\n`;
+    }
+    metadata += `Published: ${surveyEA.isPublished ? 'Yes' : 'No'}\n`;
+    if (surveyEA.isPublished && surveyEA.publisher) {
+      metadata += `Published By: ${surveyEA.publisher.name} (${surveyEA.publisher.cid || 'N/A'})\n`;
+      metadata += `Published Date: ${surveyEA.publishedDate ? new Date(surveyEA.publishedDate).toISOString().split('T')[0] : 'N/A'}\n`;
     }
     metadata += `\n`;
     metadata += `STATISTICS\n`;

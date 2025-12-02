@@ -5,12 +5,14 @@ import { surveyEnumerationAreaProviders } from './survey-enumeration-area.provid
 import { DatabaseModule } from '../../../database/database.module';
 import { EAAnnualStatsModule } from '../../annual statistics/ea-annual-statistics/ea-annual-stats.module';
 import { DzongkhagAnnualStatsModule } from '../../annual statistics/dzongkhag-annual-statistics/dzongkhag-annual-stats.module';
+import { SurveyEnumerationAreaStructureModule } from '../survey-enumeration-area-structure/survey-enumeration-area-structure.module';
 
 @Module({
   imports: [
     DatabaseModule,
     EAAnnualStatsModule,
     DzongkhagAnnualStatsModule,
+    SurveyEnumerationAreaStructureModule,
   ],
   controllers: [SurveyEnumerationAreaController],
   providers: [SurveyEnumerationAreaService, ...surveyEnumerationAreaProviders],

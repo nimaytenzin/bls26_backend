@@ -16,6 +16,9 @@ import { SurveyEnumerationAreaHouseholdListing } from '../survey/survey-enumerat
 import { CreateSurveyEnumerationAreaHouseholdListingDto } from '../survey/survey-enumeration-area-household-listing/dto/create-survey-enumeration-area-household-listing.dto';
 import { UpdateSurveyEnumerationAreaHouseholdListingDto } from '../survey/survey-enumeration-area-household-listing/dto/update-survey-enumeration-area-household-listing.dto';
 import { SurveySubmissionStatusResponseDto } from './dto/survey-submission-status.dto';
+import { SurveyEnumerationAreaSampling } from '../sampling/entities/survey-enumeration-area-sampling.entity';
+import { SurveyEnumerationAreaHouseholdSample } from '../sampling/entities/survey-enumeration-area-household-sample.entity';
+import { SurveyEnumerationAreaStructure } from '../survey/survey-enumeration-area-structure/entities/survey-enumeration-area-structure.entity';
 
 @Injectable()
 export class EnumeratorRoutesService {
@@ -276,10 +279,10 @@ export class EnumeratorRoutesService {
       );
     }
 
-    // Check if the survey EA is already submitted or validated
-    if (surveyEA.isValidated) {
+    // Check if the survey EA is already enumerated
+    if (surveyEA.isEnumerated) {
       throw new BadRequestException(
-        'Cannot add household listing to a validated survey enumeration area',
+        'Cannot add household listing to an enumerated survey enumeration area',
       );
     }
 
@@ -319,10 +322,10 @@ export class EnumeratorRoutesService {
       throw new NotFoundException('Survey enumeration area not found');
     }
 
-    // Check if the survey EA is already validated
-    if (surveyEA.isValidated) {
+    // Check if the survey EA is already enumerated
+    if (surveyEA.isEnumerated) {
       throw new BadRequestException(
-        'Cannot edit household listing in a validated survey enumeration area',
+        'Cannot edit household listing in an enumerated survey enumeration area',
       );
     }
 
@@ -375,10 +378,10 @@ export class EnumeratorRoutesService {
       throw new NotFoundException('Survey enumeration area not found');
     }
 
-    // Check if the survey EA is already validated
-    if (surveyEA.isValidated) {
+    // Check if the survey EA is already enumerated
+    if (surveyEA.isEnumerated) {
       throw new BadRequestException(
-        'Cannot delete household listing from a validated survey enumeration area',
+        'Cannot delete household listing from an enumerated survey enumeration area',
       );
     }
 
@@ -490,10 +493,12 @@ export class EnumeratorRoutesService {
       attributes: [
         'id',
         'enumerationAreaId',
-        'isSubmitted',
-        'isValidated',
-        'submissionDate',
-        'validationDate',
+        'isEnumerated',
+        'isSampled',
+        'isPublished',
+        'enumerationDate',
+        'sampledDate',
+        'publishedDate',
       ],
     });
 
@@ -512,11 +517,13 @@ export class EnumeratorRoutesService {
           totalAdministrativeZones: 0,
           totalSubAdministrativeZones: 0,
           totalEnumerationAreas: 0,
-          submittedEnumerationAreas: 0,
-          validatedEnumerationAreas: 0,
+          enumeratedEnumerationAreas: 0,
+          sampledEnumerationAreas: 0,
+          publishedEnumerationAreas: 0,
           pendingEnumerationAreas: 0,
-          submissionPercentage: '0.00',
-          validationPercentage: '0.00',
+          enumerationPercentage: '0.00',
+          samplingPercentage: '0.00',
+          publishingPercentage: '0.00',
           totalHouseholds: 0,
           totalMale: 0,
           totalFemale: 0,
@@ -676,10 +683,12 @@ export class EnumeratorRoutesService {
         areaCode: ea.areaCode,
         areaSqKm: ea.areaSqKm,
         surveyEnumerationAreaId: surveyEA.id,
-        isSubmitted: surveyEA.isSubmitted,
-        isValidated: surveyEA.isValidated,
-        submissionDate: surveyEA.submissionDate,
-        validationDate: surveyEA.validationDate,
+        isEnumerated: surveyEA.isEnumerated,
+        isSampled: surveyEA.isSampled,
+        isPublished: surveyEA.isPublished,
+        enumerationDate: surveyEA.enumerationDate,
+        sampledDate: surveyEA.sampledDate,
+        publishedDate: surveyEA.publishedDate,
         householdCount: householdData.count,
         totalMale: householdData.totalMale,
         totalFemale: householdData.totalFemale,
@@ -698,11 +707,14 @@ export class EnumeratorRoutesService {
           // Calculate sub-admin zone summary
           const subAdminSummary = {
             totalEnumerationAreas: subAdminZone.enumerationAreas.length,
-            submittedEnumerationAreas: subAdminZone.enumerationAreas.filter(
-              (ea: any) => ea.isSubmitted,
+            enumeratedEnumerationAreas: subAdminZone.enumerationAreas.filter(
+              (ea: any) => ea.isEnumerated,
             ).length,
-            validatedEnumerationAreas: subAdminZone.enumerationAreas.filter(
-              (ea: any) => ea.isValidated,
+            sampledEnumerationAreas: subAdminZone.enumerationAreas.filter(
+              (ea: any) => ea.isSampled,
+            ).length,
+            publishedEnumerationAreas: subAdminZone.enumerationAreas.filter(
+              (ea: any) => ea.isPublished,
             ).length,
             totalHouseholds: subAdminZone.enumerationAreas.reduce(
               (sum: number, ea: any) => sum + ea.householdCount,
@@ -727,12 +739,16 @@ export class EnumeratorRoutesService {
             (sum, saz) => sum + saz.summary.totalEnumerationAreas,
             0,
           ),
-          submittedEnumerationAreas: subAdministrativeZones.reduce(
-            (sum, saz) => sum + saz.summary.submittedEnumerationAreas,
+          enumeratedEnumerationAreas: subAdministrativeZones.reduce(
+            (sum, saz) => sum + saz.summary.enumeratedEnumerationAreas,
             0,
           ),
-          validatedEnumerationAreas: subAdministrativeZones.reduce(
-            (sum, saz) => sum + saz.summary.validatedEnumerationAreas,
+          sampledEnumerationAreas: subAdministrativeZones.reduce(
+            (sum, saz) => sum + saz.summary.sampledEnumerationAreas,
+            0,
+          ),
+          publishedEnumerationAreas: subAdministrativeZones.reduce(
+            (sum, saz) => sum + saz.summary.publishedEnumerationAreas,
             0,
           ),
           totalHouseholds: subAdministrativeZones.reduce(
@@ -766,12 +782,16 @@ export class EnumeratorRoutesService {
           (sum, az) => sum + az.summary.totalEnumerationAreas,
           0,
         ),
-        submittedEnumerationAreas: administrativeZones.reduce(
-          (sum, az) => sum + az.summary.submittedEnumerationAreas,
+        enumeratedEnumerationAreas: administrativeZones.reduce(
+          (sum, az) => sum + az.summary.enumeratedEnumerationAreas,
           0,
         ),
-        validatedEnumerationAreas: administrativeZones.reduce(
-          (sum, az) => sum + az.summary.validatedEnumerationAreas,
+        sampledEnumerationAreas: administrativeZones.reduce(
+          (sum, az) => sum + az.summary.sampledEnumerationAreas,
+          0,
+        ),
+        publishedEnumerationAreas: administrativeZones.reduce(
+          (sum, az) => sum + az.summary.publishedEnumerationAreas,
           0,
         ),
         totalHouseholds: administrativeZones.reduce(
@@ -796,8 +816,9 @@ export class EnumeratorRoutesService {
 
     // Calculate overall summary
     const totalEAs = surveyEAs.length;
-    const submittedEAs = surveyEAs.filter((sea) => sea.isSubmitted).length;
-    const validatedEAs = surveyEAs.filter((sea) => sea.isValidated).length;
+    const enumeratedEAs = surveyEAs.filter((sea) => sea.isEnumerated).length;
+    const sampledEAs = surveyEAs.filter((sea) => sea.isSampled).length;
+    const publishedEAs = surveyEAs.filter((sea) => sea.isPublished).length;
     const totalHouseholds = hierarchy.reduce(
       (sum, d) => sum + d.summary.totalHouseholds,
       0,
@@ -825,13 +846,16 @@ export class EnumeratorRoutesService {
         0,
       ),
       totalEnumerationAreas: totalEAs,
-      submittedEnumerationAreas: submittedEAs,
-      validatedEnumerationAreas: validatedEAs,
-      pendingEnumerationAreas: totalEAs - submittedEAs,
-      submissionPercentage:
-        totalEAs > 0 ? ((submittedEAs / totalEAs) * 100).toFixed(2) : '0.00',
-      validationPercentage:
-        totalEAs > 0 ? ((validatedEAs / totalEAs) * 100).toFixed(2) : '0.00',
+      enumeratedEnumerationAreas: enumeratedEAs,
+      sampledEnumerationAreas: sampledEAs,
+      publishedEnumerationAreas: publishedEAs,
+      pendingEnumerationAreas: totalEAs - enumeratedEAs,
+      enumerationPercentage:
+        totalEAs > 0 ? ((enumeratedEAs / totalEAs) * 100).toFixed(2) : '0.00',
+      samplingPercentage:
+        enumeratedEAs > 0 ? ((sampledEAs / enumeratedEAs) * 100).toFixed(2) : '0.00',
+      publishingPercentage:
+        sampledEAs > 0 ? ((publishedEAs / sampledEAs) * 100).toFixed(2) : '0.00',
       totalHouseholds,
       totalMale,
       totalFemale,
@@ -849,6 +873,145 @@ export class EnumeratorRoutesService {
       },
       overallSummary,
       hierarchy,
+    };
+  }
+
+  /**
+   * Get sampling results for an enumeration area with structure geolocation
+   * @param enumeratorId - User ID of the enumerator
+   * @param surveyId - Survey ID
+   * @param surveyEnumerationAreaId - Survey Enumeration Area ID
+   * @returns Sampling results with selected households and structure coordinates
+   */
+  async getSamplingResultsForEnumerator(
+    enumeratorId: number,
+    surveyId: number,
+    surveyEnumerationAreaId: number,
+  ) {
+    // Verify the enumerator is assigned to this survey
+    const assignment = await this.surveyEnumeratorRepository.findOne({
+      where: {
+        userId: enumeratorId,
+        surveyId: surveyId,
+      },
+    });
+
+    if (!assignment) {
+      throw new NotFoundException(
+        'Survey not found or not assigned to this enumerator',
+      );
+    }
+
+    // Get the survey enumeration area
+    const surveyEA = await this.surveyEnumerationAreaRepository.findOne({
+      where: {
+        id: surveyEnumerationAreaId,
+        surveyId,
+      },
+    });
+
+    if (!surveyEA) {
+      throw new NotFoundException('Survey enumeration area not found');
+    }
+
+    // Check if sampling exists
+    const sampling = await SurveyEnumerationAreaSampling.findOne({
+      where: {
+        surveyId,
+        surveyEnumerationAreaId,
+      },
+      include: [
+        {
+          model: SurveyEnumerationAreaHouseholdSample,
+          as: 'samples',
+          include: [
+            {
+              model: SurveyEnumerationAreaHouseholdListing,
+              as: 'householdListing',
+              attributes: [
+                'id',
+                'structureNumber',
+                'structureId',
+                'householdIdentification',
+                'householdSerialNumber',
+                'nameOfHOH',
+                'totalMale',
+                'totalFemale',
+                'phoneNumber',
+                'remarks',
+              ],
+            },
+          ],
+          order: [['selectionOrder', 'ASC']],
+        },
+      ],
+    });
+
+    if (!sampling) {
+      throw new NotFoundException(
+        'No sampling results found for this enumeration area',
+      );
+    }
+
+    // Get structure geolocation for each selected household
+    const selectedHouseholdsWithGeolocation = await Promise.all(
+      sampling.samples.map(async (sample) => {
+        const household = sample.householdListing;
+
+        // Get structure data if structureId exists
+        let structure = null;
+        if (household.structureId) {
+          structure = await SurveyEnumerationAreaStructure.findByPk(
+            household.structureId,
+            {
+              attributes: ['id', 'structureNumber', 'latitude', 'longitude'],
+            },
+          );
+        } 
+
+        return {
+          selectionOrder: sample.selectionOrder,
+          isReplacement: sample.isReplacement,
+          household: {
+            id: household.id,
+            householdIdentification: household.householdIdentification,
+            householdSerialNumber: household.householdSerialNumber,
+            nameOfHOH: household.nameOfHOH,
+            totalMale: household.totalMale,
+            totalFemale: household.totalFemale,
+            phoneNumber: household.phoneNumber,
+            remarks: household.remarks,
+          },
+          structure: structure
+            ? {
+                id: structure.id,
+                structureNumber: structure.structureNumber,
+                latitude: structure.latitude ? parseFloat(structure.latitude.toString()) : null,
+                longitude: structure.longitude ? parseFloat(structure.longitude.toString()) : null,
+              }
+            : null,
+        };
+      }),
+    );
+
+    return {
+      success: true,
+      message: 'Sampling results retrieved successfully',
+      data: {
+        sampling: {
+          id: sampling.id,
+          method: sampling.method,
+          sampleSize: sampling.sampleSize,
+          populationSize: sampling.populationSize,
+          samplingInterval: sampling.samplingInterval,
+          randomStart: sampling.randomStart,
+          wrapAroundCount: sampling.wrapAroundCount,
+          isFullSelection: sampling.isFullSelection,
+          executedAt: sampling.executedAt,
+          executedBy: sampling.executedBy,
+        },
+        selectedHouseholds: selectedHouseholdsWithGeolocation,
+      },
     };
   }
 }

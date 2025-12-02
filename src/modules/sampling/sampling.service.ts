@@ -110,6 +110,13 @@ export class SamplingService {
       );
     }
 
+    // Check that enumeration is completed before sampling
+    if (!surveyEnumerationArea.isEnumerated) {
+      throw new BadRequestException(
+        'Enumeration area must be enumerated before sampling can be performed',
+      );
+    }
+
     const households = await this.householdListingRepository.findAll({
       where: { surveyEnumerationAreaId },
       order: [
@@ -219,6 +226,12 @@ export class SamplingService {
     }));
 
     await this.householdSampleRepository.bulkCreate(sampleRows);
+
+    // Update survey enumeration area to mark as sampled
+    surveyEnumerationArea.isSampled = true;
+    surveyEnumerationArea.sampledBy = userId ?? null;
+    surveyEnumerationArea.sampledDate = new Date();
+    await surveyEnumerationArea.save();
 
     // Return simple status response for the enumeration area
     const response: RunSamplingResponseDto = {
@@ -366,7 +379,6 @@ export class SamplingService {
           isReplacement: sample.isReplacement,
           household: {
             id: sample.householdListing?.id,
-            structureNumber: sample.householdListing?.structureNumber,
             householdIdentification: sample.householdListing?.householdIdentification,
             householdSerialNumber: sample.householdListing?.householdSerialNumber,
             nameOfHOH: sample.householdListing?.nameOfHOH,
@@ -638,18 +650,21 @@ export class SamplingService {
       throw new NotFoundException(`Survey with ID ${surveyId} not found`);
     }
 
-    // Step 1: Get all survey enumeration areas with submission/validation status
+    // Step 1: Get all survey enumeration areas with workflow status
     const surveyEAs = await this.surveyEnumerationAreaRepository.findAll({
       where: { surveyId: surveyId },
       attributes: [
         'id',
         'enumerationAreaId',
-        'isSubmitted',
-        'submittedBy',
-        'submissionDate',
-        'isValidated',
-        'validatedBy',
-        'validationDate',
+        'isEnumerated',
+        'enumeratedBy',
+        'enumerationDate',
+        'isSampled',
+        'sampledBy',
+        'sampledDate',
+        'isPublished',
+        'publishedBy',
+        'publishedDate',
       ],
     });
 
@@ -763,12 +778,15 @@ export class SamplingService {
         sea.enumerationAreaId,
         {
           id: sea.id,
-          isSubmitted: sea.isSubmitted,
-          submittedBy: sea.submittedBy,
-          submissionDate: sea.submissionDate,
-          isValidated: sea.isValidated,
-          validatedBy: sea.validatedBy,
-          validationDate: sea.validationDate,
+          isEnumerated: sea.isEnumerated,
+          enumeratedBy: sea.enumeratedBy,
+          enumerationDate: sea.enumerationDate,
+          isSampled: sea.isSampled,
+          sampledBy: sea.sampledBy,
+          sampledDate: sea.sampledDate,
+          isPublished: sea.isPublished,
+          publishedBy: sea.publishedBy,
+          publishedDate: sea.publishedDate,
         },
       ]),
     );
@@ -890,12 +908,15 @@ export class SamplingService {
         areaCode: ea.areaCode,
         surveyEnumerationAreaId: surveyEAId,
         totalHouseholdCount: householdCount,
-        isSubmitted: seaData?.isSubmitted || false,
-        submittedBy: seaData?.submittedBy || null,
-        submissionDate: seaData?.submissionDate || null,
-        isValidated: seaData?.isValidated || false,
-        validatedBy: seaData?.validatedBy || null,
-        validationDate: seaData?.validationDate || null,
+        isEnumerated: seaData?.isEnumerated || false,
+        enumeratedBy: seaData?.enumeratedBy || null,
+        enumerationDate: seaData?.enumerationDate || null,
+        isSampled: seaData?.isSampled || false,
+        sampledBy: seaData?.sampledBy || null,
+        sampledDate: seaData?.sampledDate || null,
+        isPublished: seaData?.isPublished || false,
+        publishedBy: seaData?.publishedBy || null,
+        publishedDate: seaData?.publishedDate || null,
         hasSampling: !!sampling,
         sampling: sampling || null,
       });

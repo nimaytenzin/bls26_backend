@@ -15,15 +15,20 @@ import {
   Header,
   Res,
   BadRequestException,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { SurveyEnumerationAreaService } from './survey-enumeration-area.service';
+import { SurveyEnumerationAreaStructureService } from '../survey-enumeration-area-structure/survey-enumeration-area-structure.service';
 import {
   CreateSurveyEnumerationAreaDto,
-  SubmitSurveyEnumerationAreaDto,
-  ValidateSurveyEnumerationAreaDto,
+  CompleteEnumerationDto,
 } from './dto/create-survey-enumeration-area.dto';
+import {
+  PublishSurveyEnumerationAreaDto,
+  BulkPublishDto,
+} from './dto/publish-survey-enumeration-area.dto';
 import { UpdateSurveyEnumerationAreaDto } from './dto/update-survey-enumeration-area.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -34,6 +39,7 @@ import { UserRole } from '../../auth/entities/user.entity';
 export class SurveyEnumerationAreaController {
   constructor(
     private readonly surveyEnumerationAreaService: SurveyEnumerationAreaService,
+    private readonly structureService: SurveyEnumerationAreaStructureService,
   ) {}
 
   /**
@@ -55,8 +61,9 @@ export class SurveyEnumerationAreaController {
    * Get all survey enumeration area assignments with optional filters
    * @query surveyId - Filter by survey
    * @query enumerationAreaId - Filter by enumeration area
-   * @query isSubmitted - Filter by submission status (true/false)
-   * @query isValidated - Filter by validation status (true/false)
+   * @query isEnumerated - Filter by enumeration status (true/false)
+   * @query isSampled - Filter by sampling status (true/false)
+   * @query isPublished - Filter by publishing status (true/false)
    */
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -64,14 +71,16 @@ export class SurveyEnumerationAreaController {
   findAll(
     @Query('surveyId') surveyId?: string,
     @Query('enumerationAreaId') enumerationAreaId?: string,
-    @Query('isSubmitted') isSubmitted?: string,
-    @Query('isValidated') isValidated?: string,
+    @Query('isEnumerated') isEnumerated?: string,
+    @Query('isSampled') isSampled?: string,
+    @Query('isPublished') isPublished?: string,
   ) {
     return this.surveyEnumerationAreaService.findAll(
       surveyId ? +surveyId : undefined,
       enumerationAreaId ? +enumerationAreaId : undefined,
-      isSubmitted !== undefined ? isSubmitted === 'true' : undefined,
-      isValidated !== undefined ? isValidated === 'true' : undefined,
+      isEnumerated !== undefined ? isEnumerated === 'true' : undefined,
+      isSampled !== undefined ? isSampled === 'true' : undefined,
+      isPublished !== undefined ? isPublished === 'true' : undefined,
     );
   }
 
@@ -89,7 +98,7 @@ export class SurveyEnumerationAreaController {
   }
 
   /**
-   * Get submission statistics for a survey
+   * Get submission statistics for a survey (backward compatibility)
    * @param surveyId
    */
   @Get('by-survey/:surveyId/statistics')
@@ -97,6 +106,39 @@ export class SurveyEnumerationAreaController {
   @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
   getStatistics(@Param('surveyId') surveyId: string) {
     return this.surveyEnumerationAreaService.getSubmissionStatistics(+surveyId);
+  }
+
+  /**
+   * Get enumeration areas that are enumerated and ready for sampling
+   * @param surveyId
+   */
+  @Get('by-survey/:surveyId/enumerated-for-sampling')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPERVISOR)
+  getEnumeratedForSampling(@Param('surveyId') surveyId: string) {
+    return this.surveyEnumerationAreaService.getEnumeratedForSampling(+surveyId);
+  }
+
+  /**
+   * Get enumeration areas that are sampled and ready for publishing
+   * @param surveyId
+   */
+  @Get('by-survey/:surveyId/ready-for-publishing')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  getReadyForPublishing(@Param('surveyId') surveyId: string) {
+    return this.surveyEnumerationAreaService.getReadyForPublishing(+surveyId);
+  }
+
+  /**
+   * Get sampling status and progress for a survey
+   * @param surveyId
+   */
+  @Get('by-survey/:surveyId/sampling-status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
+  getSamplingStatus(@Param('surveyId') surveyId: string) {
+    return this.surveyEnumerationAreaService.getSamplingStatus(+surveyId);
   }
 
   /**
@@ -113,31 +155,52 @@ export class SurveyEnumerationAreaController {
   }
 
   /**
-   * Submit data for a survey enumeration area (Supervisor only)
+   * Complete enumeration for a survey enumeration area (Enumerator only)
    * @param id - Survey Enumeration Area ID
    */
-  @Post(':id/submit')
+  @Post(':id/complete-enumeration')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SUPERVISOR)
-  submitData(
+  @Roles(UserRole.ENUMERATOR)
+  completeEnumeration(
     @Param('id') id: string,
-    @Body() submitDto: SubmitSurveyEnumerationAreaDto,
+    @Body() completeDto: CompleteEnumerationDto,
   ) {
-    return this.surveyEnumerationAreaService.submitData(+id, submitDto);
+    return this.surveyEnumerationAreaService.completeEnumeration(+id, completeDto);
   }
 
   /**
-   * Validate submitted data (Admin only)
+   * Publish sampled data for a survey enumeration area (Admin only)
    * @param id - Survey Enumeration Area ID
    */
-  @Post(':id/validate')
+  @Post(':id/publish')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  validateData(
+  publishData(
     @Param('id') id: string,
-    @Body() validateDto: ValidateSurveyEnumerationAreaDto,
+    @Body() publishDto: PublishSurveyEnumerationAreaDto,
   ) {
-    return this.surveyEnumerationAreaService.validateData(+id, validateDto);
+    return this.surveyEnumerationAreaService.publishData(+id, publishDto);
+  }
+
+  /**
+   * Bulk publish sampled data for multiple enumeration areas (Admin only)
+   */
+  @Post('bulk-publish')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  bulkPublish(@Body() bulkPublishDto: BulkPublishDto) {
+    return this.surveyEnumerationAreaService.bulkPublish(bulkPublishDto);
+  }
+
+  /**
+   * Get structures for a specific survey enumeration area
+   * @access Admin, Supervisor, Enumerator
+   */
+  @Get('survey-ea/structures/:seaId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ENUMERATOR)
+  findBySurveyEnumerationAreaStructures(@Param('seaId', ParseIntPipe) seaId: number) {
+    return this.structureService.findBySurveyEnumerationArea(seaId);
   }
 
   /**

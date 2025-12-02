@@ -11,15 +11,17 @@ import { Survey } from '../../../survey/survey/entities/survey.entity';
 import { EnumerationArea } from '../../../location/enumeration-area/entities/enumeration-area.entity';
 import { User } from '../../../auth/entities/user.entity';
 import { SurveyEnumerationAreaHouseholdListing } from '../../survey-enumeration-area-household-listing/entities/survey-enumeration-area-household-listing.entity';
+import { SurveyEnumerationAreaStructure } from '../../survey-enumeration-area-structure/entities/survey-enumeration-area-structure.entity';
 
 /**
  * SurveyEnumerationArea Junction Table
  * Manages the many-to-many relationship between Surveys and EnumerationAreas
- * with workflow tracking (submission and validation)
+ * with workflow tracking (enumeration, sampling, and publishing)
  *
  * Workflow:
- * 1. Supervisor submits data for an enumeration area (isSubmitted = true, submittedBy = supervisor)
- * 2. Admin validates the submission (isValidated = true, validatedBy = admin)
+ * 1. Enumerator completes enumeration (isEnumerated = true, enumeratedBy = enumerator)
+ * 2. Supervisor performs sampling (isSampled = true, sampledBy = supervisor)
+ * 3. Admin publishes data (isPublished = true, publishedBy = admin)
  */
 @Table({
   timestamps: true,
@@ -39,16 +41,20 @@ import { SurveyEnumerationAreaHouseholdListing } from '../../survey-enumeration-
       name: 'idx_enumeration_area',
     },
     {
-      fields: ['isSubmitted', 'isValidated'],
+      fields: ['isEnumerated', 'isSampled', 'isPublished'],
       name: 'idx_workflow_status',
     },
     {
-      fields: ['submittedBy'],
-      name: 'idx_submitted_by',
+      fields: ['enumeratedBy'],
+      name: 'idx_enumerated_by',
     },
     {
-      fields: ['validatedBy'],
-      name: 'idx_validated_by',
+      fields: ['sampledBy'],
+      name: 'idx_sampled_by',
+    },
+    {
+      fields: ['publishedBy'],
+      name: 'idx_published_by',
     },
   ],
 })
@@ -73,47 +79,68 @@ export class SurveyEnumerationArea extends Model {
   })
   enumerationAreaId: number;
 
-  // Submission Workflow Fields
+  // Enumeration Workflow Fields (renamed from submission)
   @Column({
     type: DataType.BOOLEAN,
     allowNull: false,
     defaultValue: false,
   })
-  isSubmitted: boolean;
+  isEnumerated: boolean;
 
   @ForeignKey(() => User)
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  submittedBy: number;
+  enumeratedBy: number;
 
   @Column({
     type: DataType.DATE,
     allowNull: true,
   })
-  submissionDate: Date;
+  enumerationDate: Date;
 
-  // Validation Workflow Fields
+  // Sampling Workflow Fields
   @Column({
     type: DataType.BOOLEAN,
     allowNull: false,
     defaultValue: false,
   })
-  isValidated: boolean;
+  isSampled: boolean;
 
   @ForeignKey(() => User)
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  validatedBy: number;
+  sampledBy: number;
 
   @Column({
     type: DataType.DATE,
     allowNull: true,
   })
-  validationDate: Date;
+  sampledDate: Date;
+
+  // Publishing Workflow Fields
+  @Column({
+    type: DataType.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  })
+  isPublished: boolean;
+
+  @ForeignKey(() => User)
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: true,
+  })
+  publishedBy: number;
+
+  @Column({
+    type: DataType.DATE,
+    allowNull: true,
+  })
+  publishedDate: Date;
 
   // Optional: Rejection/Comments
   @Column({
@@ -129,11 +156,17 @@ export class SurveyEnumerationArea extends Model {
   @BelongsTo(() => EnumerationArea)
   enumerationArea: EnumerationArea;
 
-  @BelongsTo(() => User, 'submittedBy')
-  submitter: User;
+  @BelongsTo(() => User, 'enumeratedBy')
+  enumerator: User;
 
-  @BelongsTo(() => User, 'validatedBy')
-  validator: User;
+  @BelongsTo(() => User, 'sampledBy')
+  sampler: User;
+
+  @BelongsTo(() => User, 'publishedBy')
+  publisher: User;
+
+  @HasMany(() => SurveyEnumerationAreaStructure)
+  structures: SurveyEnumerationAreaStructure[];
 
   @HasMany(() => SurveyEnumerationAreaHouseholdListing)
   householdListings: SurveyEnumerationAreaHouseholdListing[];

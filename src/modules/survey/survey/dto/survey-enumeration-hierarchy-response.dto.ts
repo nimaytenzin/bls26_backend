@@ -7,14 +7,18 @@ export class EnumerationAreaHierarchyDto {
   areaCode: string;
   surveyEnumerationAreaId: number;
   totalHouseholdCount: number;
-  // Submission status
-  isSubmitted: boolean;
-  submittedBy: number | null;
-  submissionDate: Date | null;
-  // Validation status
-  isValidated: boolean;
-  validatedBy: number | null;
-  validationDate: Date | null;
+  // Enumeration status
+  isEnumerated: boolean;
+  enumeratedBy: number | null;
+  enumerationDate: Date | null;
+  // Sampling status
+  isSampled: boolean;
+  sampledBy: number | null;
+  sampledDate: Date | null;
+  // Publishing status
+  isPublished: boolean;
+  publishedBy: number | null;
+  publishedDate: Date | null;
 }
 
 export class SubAdministrativeZoneHierarchyDto {

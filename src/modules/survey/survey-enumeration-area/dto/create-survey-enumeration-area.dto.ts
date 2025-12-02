@@ -12,19 +12,7 @@ export class CreateSurveyEnumerationAreaDto {
   comments?: string;
 }
 
-export class SubmitSurveyEnumerationAreaDto {
+export class CompleteEnumerationDto {
   @IsInt()
-  submittedBy: number;
-}
-
-export class ValidateSurveyEnumerationAreaDto {
-  @IsInt()
-  validatedBy: number;
-
-  @IsBoolean()
-  isApproved: boolean;
-
-  @IsOptional()
-  @IsString()
-  comments?: string;
+  enumeratedBy: number;
 }
