@@ -242,3 +242,4 @@ Currently, the entity maintains backward compatibility by keeping `isFullyValida
 **Version**: 1.0  
 **Status**: Active (with pending migration)
 
+
