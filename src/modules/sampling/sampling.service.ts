@@ -10,6 +10,7 @@ import { Survey } from '../survey/survey/entities/survey.entity';
 import { RunEnumerationAreaSamplingDto } from './dto/run-enumeration-area-sampling.dto';
 import { SurveyEnumerationArea } from '../survey/survey-enumeration-area/entities/survey-enumeration-area.entity';
 import { SurveyEnumerationAreaHouseholdListing } from '../survey/survey-enumeration-area-household-listing/entities/survey-enumeration-area-household-listing.entity';
+import { SurveyEnumerationAreaStructure } from '../survey/survey-enumeration-area-structure/entities/survey-enumeration-area-structure.entity';
 import { SurveyEnumerationAreaSampling } from './entities/survey-enumeration-area-sampling.entity';
 import { SurveyEnumerationAreaHouseholdSample } from './entities/survey-enumeration-area-household-sample.entity';
 import { EnumerationArea } from '../location/enumeration-area/entities/enumeration-area.entity';
@@ -49,9 +50,20 @@ export class SamplingService {
     private readonly dzongkhagRepository: typeof Dzongkhag,
   ) {}
 
+  /**
+   * Get survey sampling configuration
+   * Optimized: No survey existence check to reduce database queries
+   * Returns null if config doesn't exist (frontend handles this)
+   * @param surveyId - Survey ID
+   * @returns Survey sampling config or null
+   */
   async getSurveySamplingConfig(surveyId: number) {
-    await this.ensureSurveyExists(surveyId);
-    return this.surveySamplingConfigRepository.findOne({ where: { surveyId } });
+    // Direct query without survey validation to improve performance
+    // Frontend already handles null response (404 case)
+    return this.surveySamplingConfigRepository.findOne({ 
+      where: { surveyId },
+      
+    });
   }
 
   async upsertSurveySamplingConfig(
@@ -297,7 +309,8 @@ export class SamplingService {
               as: 'householdListing',
               attributes: [
                 'id',
-                'structureNumber',
+                'structureId',
+                'surveyEnumerationAreaId',
                 'householdIdentification',
                 'householdSerialNumber',
                 'nameOfHOH',
@@ -306,6 +319,31 @@ export class SamplingService {
                 'phoneNumber',
                 'remarks',
                 'createdAt',
+              ],
+              include: [
+                {
+                  model: SurveyEnumerationAreaStructure,
+                  as: 'structure',
+                  attributes: [
+                    'id',
+                    'structureNumber',
+                    'latitude',
+                    'longitude',
+                    'surveyEnumerationAreaId',
+                  ],
+                },
+                {
+                  model: SurveyEnumerationArea,
+                  as: 'surveyEnumerationArea',
+                  attributes: [
+                    'id',
+                    'surveyId',
+                    'enumerationAreaId',
+                    'isEnumerated',
+                    'isSampled',
+                    'isPublished',
+                  ],
+                },
               ],
             },
           ],
@@ -359,6 +397,14 @@ export class SamplingService {
           executedAt: sampling.executedAt,
           executedBy: sampling.executedBy,
         },
+        surveyEnumerationArea: {
+          id: sampling.surveyEnumerationArea?.id,
+          surveyId: sampling.surveyEnumerationArea?.surveyId,
+          enumerationAreaId: sampling.surveyEnumerationArea?.enumerationAreaId,
+          isEnumerated: sampling.surveyEnumerationArea?.isEnumerated,
+          isSampled: sampling.surveyEnumerationArea?.isSampled,
+          isPublished: sampling.surveyEnumerationArea?.isPublished,
+        },
         enumerationArea: {
           id: sampling.surveyEnumerationArea?.enumerationArea?.id,
           name: sampling.surveyEnumerationArea?.enumerationArea?.name,
@@ -390,6 +436,31 @@ export class SamplingService {
             phoneNumber: sample.householdListing?.phoneNumber,
             remarks: sample.householdListing?.remarks,
             createdAt: sample.householdListing?.createdAt,
+            structureId: sample.householdListing?.structureId,
+            structure: sample.householdListing?.structure
+              ? {
+                  id: sample.householdListing.structure.id,
+                  structureNumber: sample.householdListing.structure.structureNumber,
+                  latitude: sample.householdListing.structure.latitude,
+                  longitude: sample.householdListing.structure.longitude,
+                  surveyEnumerationAreaId:
+                    sample.householdListing.structure.surveyEnumerationAreaId,
+                }
+              : null,
+            surveyEnumerationArea: sample.householdListing?.surveyEnumerationArea
+              ? {
+                  id: sample.householdListing.surveyEnumerationArea.id,
+                  surveyId: sample.householdListing.surveyEnumerationArea.surveyId,
+                  enumerationAreaId:
+                    sample.householdListing.surveyEnumerationArea.enumerationAreaId,
+                  isEnumerated:
+                    sample.householdListing.surveyEnumerationArea.isEnumerated,
+                  isSampled:
+                    sample.householdListing.surveyEnumerationArea.isSampled,
+                  isPublished:
+                    sample.householdListing.surveyEnumerationArea.isPublished,
+                }
+              : null,
           },
         })) || [],
       },

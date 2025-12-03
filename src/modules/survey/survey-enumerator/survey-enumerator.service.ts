@@ -44,7 +44,7 @@ export class SurveyEnumeratorService {
       include: [
         {
           model: User,
-          attributes: ['id', 'username', 'email', 'firstName', 'lastName'],
+          attributes: ['id', 'name', 'emailAddress', 'cid', 'phoneNumber', 'role'],
         },
         {
           model: Survey,
@@ -54,7 +54,9 @@ export class SurveyEnumeratorService {
             'description',
             'startDate',
             'endDate',
-            'isActive',
+            'year',
+            'status',
+            'isFullyValidated',
           ],
         },
       ],
@@ -84,7 +86,9 @@ export class SurveyEnumeratorService {
             'description',
             'startDate',
             'endDate',
-            'isActive',
+            'year',
+            'status',
+            'isFullyValidated',
           ],
         },
       ],
@@ -97,7 +101,7 @@ export class SurveyEnumeratorService {
       include: [
         {
           model: User,
-          attributes: ['id', 'username', 'email', 'firstName', 'lastName'],
+          attributes: ['id', 'name', 'emailAddress', 'cid', 'phoneNumber', 'role'],
         },
         {
           model: Survey,
@@ -107,7 +111,9 @@ export class SurveyEnumeratorService {
             'description',
             'startDate',
             'endDate',
-            'isActive',
+            'year',
+            'status',
+            'isFullyValidated',
           ],
         },
       ],

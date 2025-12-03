@@ -55,7 +55,37 @@ export class SurveyEnumerationAreaStructureController {
   }
 
   /**
-   * Get structures for a specific survey enumeration area
+   * Get all structures with household listings for a survey enumeration area
+   * 
+   * Returns structures grouped with their associated household listings.
+   * Perfect for displaying household listings grouped by structure in the UI.
+   * 
+   * @param seaId - Survey Enumeration Area ID
+   * @returns Array of structures, each containing:
+   *   - Structure details (id, structureNumber, latitude, longitude)
+   *   - Household listings array (grouped by structure)
+   *   - Survey enumeration area info
+   * 
+   * @example Response:
+   * [
+   *   {
+   *     "id": 1,
+   *     "structureNumber": "STR-0001",
+   *     "latitude": 27.1234,
+   *     "longitude": 89.5678,
+   *     "householdListings": [
+   *       {
+   *         "id": 1,
+   *         "householdSerialNumber": 1,
+   *         "nameOfHOH": "John Doe",
+   *         "totalMale": 2,
+   *         "totalFemale": 3,
+   *         ...
+   *       }
+   *     ]
+   *   }
+   * ]
+   * 
    * @access Admin, Supervisor, Enumerator
    */
   @Get('survey-ea/structures/:seaId')

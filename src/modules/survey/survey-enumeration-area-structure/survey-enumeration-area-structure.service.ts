@@ -10,6 +10,7 @@ import { UpdateSurveyEnumerationAreaStructureDto } from './dto/update-survey-enu
 import { SurveyEnumerationAreaStructure } from './entities/survey-enumeration-area-structure.entity';
 import { SurveyEnumerationArea } from '../survey-enumeration-area/entities/survey-enumeration-area.entity';
 import { SurveyEnumerationAreaHouseholdListing } from '../survey-enumeration-area-household-listing/entities/survey-enumeration-area-household-listing.entity';
+import { User } from '../../auth/entities/user.entity';
 
 @Injectable()
 export class SurveyEnumerationAreaStructureService {
@@ -102,8 +103,11 @@ export class SurveyEnumerationAreaStructureService {
   }
 
   /**
-   * Get structures for a specific survey enumeration area
-   * @param surveyEnumerationAreaId
+   * Get structures for a specific survey enumeration area with household listings
+   * Returns all structures with their associated household listings grouped by structure
+   * Perfect for displaying household listings grouped by structure
+   * @param surveyEnumerationAreaId - Survey Enumeration Area ID
+   * @returns Array of structures, each containing its household listings
    */
   async findBySurveyEnumerationArea(
     surveyEnumerationAreaId: number,
@@ -123,7 +127,32 @@ export class SurveyEnumerationAreaStructureService {
       include: [
         {
           model: SurveyEnumerationAreaHouseholdListing,
-         },
+          attributes: [
+            'id',
+            'householdIdentification',
+            'householdSerialNumber',
+            'nameOfHOH',
+            'totalMale',
+            'totalFemale',
+            'phoneNumber',
+            'remarks',
+            'submittedBy',
+            'createdAt',
+            'updatedAt',
+          ],
+          include: [
+            {
+              model: User,
+              as: 'submitter',
+              attributes: ['id', 'name', 'cid', 'emailAddress', 'phoneNumber'],
+            },
+          ],
+          order: [['householdSerialNumber', 'ASC']],
+        },
+        {
+          model: SurveyEnumerationArea,
+          attributes: ['id', 'surveyId', 'enumerationAreaId'],
+        },
       ],
       order: [['structureNumber', 'ASC']],
     });

@@ -21,6 +21,13 @@ import { UserRole } from '../auth/entities/user.entity';
 export class SamplingController {
   constructor(private readonly samplingService: SamplingService) {}
 
+  /**
+   * Get survey sampling configuration
+   * Returns null if config doesn't exist (frontend handles 404 case)
+   * Optimized for performance - no unnecessary survey validation
+   * @param surveyId - Survey ID
+   * @returns Survey sampling config or null
+   */
   @Get('surveys/:surveyId/config')
   @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
   async getSurveySamplingConfig(
@@ -30,7 +37,7 @@ export class SamplingController {
   }
 
   @Post('surveys/:surveyId/config')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
   async upsertSurveySamplingConfig(
     @Param('surveyId', ParseIntPipe) surveyId: number,
     @Body() dto: UpdateSurveySamplingConfigDto,
