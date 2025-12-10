@@ -13,6 +13,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { SubAdministrativeZoneService } from './sub-administrative-zone.service';
@@ -42,10 +43,84 @@ export class SubAdministrativeZoneController {
   }
 
   @Post('geojson')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   async createFromGeoJson(
     @Body() geoJsonDto: CreateSubAdministrativeZoneGeoJsonDto,
   ) {
     return this.subAdministrativeZoneService.createFromGeoJson(geoJsonDto);
+  }
+
+  /**
+   * Bulk upload sub-administrative zones from GeoJSON file by administrative zone
+   * Accepts a GeoJSON FeatureCollection file and processes all features
+   * @param administrativeZoneId - Administrative Zone ID
+   * @param file - GeoJSON file (FeatureCollection)
+   * @access Admin only
+   */
+  @Post('bulk-upload-geojson/by-administrative-zone/:administrativeZoneId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+      fileFilter: (req, file, cb) => {
+        if (
+          file.mimetype === 'application/json' ||
+          file.mimetype === 'application/geo+json' ||
+          file.originalname.endsWith('.geojson') ||
+          file.originalname.endsWith('.json')
+        ) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              'Invalid file type. Only .json or .geojson files are allowed.',
+            ),
+            false,
+          );
+        }
+      },
+    }),
+  )
+  async bulkUploadGeoJsonByAdministrativeZone(
+    @Param('administrativeZoneId', ParseIntPipe) administrativeZoneId: number,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    try {
+      // Parse the GeoJSON file
+      const geoJsonData = JSON.parse(file.buffer.toString('utf-8'));
+
+      // Validate it's a FeatureCollection
+      if (geoJsonData.type !== 'FeatureCollection') {
+        throw new BadRequestException(
+          'Invalid GeoJSON format. Must be a FeatureCollection.',
+        );
+      }
+
+      if (!geoJsonData.features || geoJsonData.features.length === 0) {
+        throw new BadRequestException(
+          'FeatureCollection contains no features.',
+        );
+      }
+
+      // Process the bulk upload with administrativeZoneId
+      const result =
+        await this.subAdministrativeZoneService.bulkCreateFromGeoJson(
+          geoJsonData.features,
+          administrativeZoneId,
+        );
+
+      return result;
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to process GeoJSON file: ${error.message}`,
+      );
+    }
   }
 
   @Post('upload-geojson/:subAdministrativeZoneId')
@@ -153,12 +228,40 @@ export class SubAdministrativeZoneController {
     );
   }
 
+  /**
+   * Get all sub-administrative zones by dzongkhag ID
+   * @param dzongkhagId - Dzongkhag ID
+   * @returns Array of sub-administrative zones
+   * @access Public
+   */
+  @Get('by-dzongkhag/:dzongkhagId')
+  async findByDzongkhag(
+    @Param('dzongkhagId', ParseIntPipe) dzongkhagId: number,
+  ) {
+    return this.subAdministrativeZoneService.findByDzongkhag(dzongkhagId);
+  }
+
   @Get('geojson/by-administrative-zone/:administrativeZoneId')
   async findAllAsGeoJsonByAdministrativeZone(
     @Param('administrativeZoneId') administrativeZoneId: string,
   ) {
     return this.subAdministrativeZoneService.findAllAsGeoJsonByAdministrativeZone(
       +administrativeZoneId,
+    );
+  }
+
+  /**
+   * Get all sub-administrative zones by dzongkhag ID as GeoJSON
+   * @param dzongkhagId - Dzongkhag ID
+   * @returns GeoJSON FeatureCollection
+   * @access Public
+   */
+  @Get('geojson/by-dzongkhag/:dzongkhagId')
+  async findAllAsGeoJsonByDzongkhag(
+    @Param('dzongkhagId', ParseIntPipe) dzongkhagId: number,
+  ) {
+    return this.subAdministrativeZoneService.findAllAsGeoJsonByDzongkhag(
+      dzongkhagId,
     );
   }
 

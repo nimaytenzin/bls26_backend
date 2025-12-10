@@ -10,7 +10,12 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+  ParseIntPipe,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AdministrativeZoneService } from './administrative-zone.service';
 import { CreateAdministrativeZoneDto } from './dto/create-administrative-zone.dto';
 import { CreateAdministrativeZoneGeoJsonDto } from './dto/create-administrative-zone-geojson.dto';
@@ -36,10 +41,83 @@ export class AdministrativeZoneController {
   }
 
   @Post('geojson')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   async createFromGeoJson(
     @Body() geoJsonDto: CreateAdministrativeZoneGeoJsonDto,
   ) {
     return this.administrativeZoneService.createFromGeoJson(geoJsonDto);
+  }
+
+  /**
+   * Bulk upload administrative zones from GeoJSON file by dzongkhag
+   * Accepts a GeoJSON FeatureCollection file and processes all features
+   * @param dzongkhagId - Dzongkhag ID (optional, can also be in feature properties)
+   * @param file - GeoJSON file (FeatureCollection)
+   * @access Admin only
+   */
+  @Post('bulk-upload-geojson/by-dzongkhag/:dzongkhagId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+      fileFilter: (req, file, cb) => {
+        if (
+          file.mimetype === 'application/json' ||
+          file.mimetype === 'application/geo+json' ||
+          file.originalname.endsWith('.geojson') ||
+          file.originalname.endsWith('.json')
+        ) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              'Invalid file type. Only .json or .geojson files are allowed.',
+            ),
+            false,
+          );
+        }
+      },
+    }),
+  )
+  async bulkUploadGeoJsonByDzongkhag(
+    @Param('dzongkhagId', ParseIntPipe) dzongkhagId: number,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    try {
+      // Parse the GeoJSON file
+      const geoJsonData = JSON.parse(file.buffer.toString('utf-8'));
+
+      // Validate it's a FeatureCollection
+      if (geoJsonData.type !== 'FeatureCollection') {
+        throw new BadRequestException(
+          'Invalid GeoJSON format. Must be a FeatureCollection.',
+        );
+      }
+
+      if (!geoJsonData.features || geoJsonData.features.length === 0) {
+        throw new BadRequestException(
+          'FeatureCollection contains no features.',
+        );
+      }
+
+      // Process the bulk upload with dzongkhagId
+      const result = await this.administrativeZoneService.bulkCreateFromGeoJson(
+        geoJsonData.features,
+        dzongkhagId,
+      );
+
+      return result;
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to process GeoJSON file: ${error.message}`,
+      );
+    }
   }
 
   @Get()

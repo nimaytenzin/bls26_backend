@@ -127,6 +127,25 @@ export class SurveyEnumerationAreaHouseholdListingController {
     );
   }
 
+  /**
+   * Get current structures for an enumeration area
+   * Returns structures from the latest published survey
+   * @param enumerationAreaId - Enumeration Area ID
+   * @returns Array of structures from the latest published survey
+   * @access All authenticated users
+   */
+  @Get('current/enumeration-area/:enumerationAreaId/structures')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ENUMERATOR)
+  @HttpCode(HttpStatus.OK)
+  getCurrentEnumerationAreaStructures(
+    @Param('enumerationAreaId', ParseIntPipe) enumerationAreaId: number,
+  ) {
+    return this.surveyEnumerationAreaHouseholdListingService.getCurrentEnumerationAreaStructures(
+      enumerationAreaId,
+    );
+  }
+
  
 
   /**
@@ -229,6 +248,24 @@ export class SurveyEnumerationAreaHouseholdListingController {
     return this.surveyEnumerationAreaHouseholdListingService.findBySurveyPaginated(
       surveyId,
       query,
+    );
+  }
+
+  /**
+   * Get household listings by structure ID
+   * @param structureId - Structure ID
+   * @returns Array of household listings for the structure
+   * @access All authenticated users
+   */
+  @Get('by-structure/:structureId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ENUMERATOR)
+  @HttpCode(HttpStatus.OK)
+  getByStructure(
+    @Param('structureId', ParseIntPipe) structureId: number,
+  ) {
+    return this.surveyEnumerationAreaHouseholdListingService.findByStructure(
+      structureId,
     );
   }
 

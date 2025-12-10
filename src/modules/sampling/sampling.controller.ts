@@ -76,7 +76,8 @@ export class SamplingController {
   }
 
   @Get('surveys/:surveyId/enumeration-areas/:seaId/results')
-  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ENUMERATOR)
+
   async getSamplingResults(
     @Param('surveyId', ParseIntPipe) surveyId: number,
     @Param('seaId', ParseIntPipe) seaId: number,

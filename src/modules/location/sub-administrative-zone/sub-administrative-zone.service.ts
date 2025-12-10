@@ -38,10 +38,138 @@ export class SubAdministrativeZoneService {
         name: properties.name,
         areaCode: properties.areaCode,
         type: properties.type,
+        areaSqKm: properties.areaSqKm,
         geom: Sequelize.fn('ST_GeomFromGeoJSON', geomString),
       });
 
     return subAdministrativeZone;
+  }
+
+  /**
+   * Bulk create sub-administrative zones from GeoJSON FeatureCollection
+   * @param features - Array of GeoJSON features
+   * @param administrativeZoneId - Optional administrative zone ID to filter/assign to all features
+   * @returns Summary of created, skipped, and error items
+   */
+  async bulkCreateFromGeoJson(
+    features: any[],
+    administrativeZoneId?: number,
+  ): Promise<{
+    success: number;
+    skipped: number;
+    created: SubAdministrativeZone[];
+    skippedItems: Array<{
+      areaCode: string;
+      administrativeZoneId: number;
+      reason: string;
+    }>;
+    errors: Array<{
+      feature: any;
+      error: string;
+    }>;
+  }> {
+    const created: SubAdministrativeZone[] = [];
+    const skippedItems: Array<{
+      areaCode: string;
+      administrativeZoneId: number;
+      reason: string;
+    }> = [];
+    const errors: Array<{ feature: any; error: string }> = [];
+
+    for (const feature of features) {
+      try {
+        if (feature.type !== 'Feature') {
+          errors.push({
+            feature,
+            error: 'Invalid feature type. Must be a Feature.',
+          });
+          continue;
+        }
+
+        const { properties, geometry } = feature;
+
+        // Use administrativeZoneId from parameter if provided, otherwise from properties
+        const finalAdministrativeZoneId =
+          administrativeZoneId || properties.administrativeZoneId;
+
+        // Validate required properties
+        if (
+          !finalAdministrativeZoneId ||
+          !properties.name ||
+          !properties.areaCode
+        ) {
+          errors.push({
+            feature,
+            error:
+              'Missing required properties: administrativeZoneId, name, or areaCode',
+          });
+          continue;
+        }
+
+        // Validate type if provided
+        if (
+          properties.type &&
+          !['chiwog', 'lap'].includes(properties.type.toLowerCase())
+        ) {
+          errors.push({
+            feature,
+            error: 'Invalid type. Must be "chiwog" or "lap".',
+          });
+          continue;
+        }
+
+        // Check if sub-administrative zone already exists by areaCode and administrativeZoneId
+        const existingSAZ =
+          await this.subAdministrativeZoneRepository.findOne({
+            where: {
+              areaCode: properties.areaCode,
+              administrativeZoneId: finalAdministrativeZoneId,
+            },
+          });
+
+        if (existingSAZ) {
+          skippedItems.push({
+            areaCode: properties.areaCode,
+            administrativeZoneId: finalAdministrativeZoneId,
+            reason: 'Sub-Administrative Zone already exists',
+          });
+          continue;
+        }
+
+        // Convert GeoJSON geometry to PostGIS format
+        const geomString = JSON.stringify(geometry);
+
+        // Create the sub-administrative zone
+        const subAdministrativeZone =
+          await this.subAdministrativeZoneRepository.create({
+            administrativeZoneId: finalAdministrativeZoneId,
+            name: properties.name,
+            areaCode: properties.areaCode,
+            type: properties.type
+              ? (properties.type.toLowerCase() as 'chiwog' | 'lap')
+              : 'chiwog', // Default to chiwog if not specified
+            areaSqKm: properties.areaSqKm || 0,
+            geom: geometry
+              ? Sequelize.fn('ST_GeomFromGeoJSON', geomString)
+              : null,
+          });
+
+        created.push(subAdministrativeZone);
+      } catch (error) {
+        errors.push({
+          feature,
+          error: error.message,
+        });
+      }
+    }
+
+    return {
+      success: created.length,
+      skipped: skippedItems.length,
+      created,
+      skippedItems,
+      errors,
+    };
   }
 
   async findAll(): Promise<SubAdministrativeZone[]> {
@@ -106,6 +234,28 @@ export class SubAdministrativeZoneService {
     );
   }
 
+  /**
+   * Find all sub-administrative zones by dzongkhag ID
+   * @param dzongkhagId - Dzongkhag ID
+   * @returns Array of sub-administrative zones
+   */
+  async findByDzongkhag(
+    dzongkhagId: number,
+  ): Promise<SubAdministrativeZone[]> {
+    return await this.subAdministrativeZoneRepository.findAll<SubAdministrativeZone>(
+      {
+        include: [
+          {
+            model: AdministrativeZone,
+            where: { dzongkhagId },
+            attributes: ['id', 'name', 'type', 'dzongkhagId'],
+          },
+        ],
+        order: [['id', 'ASC']],
+      },
+    );
+  }
+
   async findAllAsGeoJsonByAdministrativeZone(
     administrativeZoneId: number,
   ): Promise<any> {
@@ -127,6 +277,41 @@ export class SubAdministrativeZoneService {
       );
 
     return data[0][0].jsonb_build_object;
+  }
+
+  /**
+   * Find all sub-administrative zones by dzongkhag ID as GeoJSON
+   * @param dzongkhagId - Dzongkhag ID
+   * @returns GeoJSON FeatureCollection
+   */
+  async findAllAsGeoJsonByDzongkhag(dzongkhagId: number): Promise<any> {
+    const data: any =
+      await this.subAdministrativeZoneRepository.sequelize.query(
+        `SELECT jsonb_build_object(
+        'type',     'FeatureCollection',
+        'features', jsonb_agg(features.feature)
+      )
+      FROM (
+        SELECT jsonb_build_object(
+          'type',       'Feature',
+          'id',         inputs.id,
+          'geometry',   ST_AsGeoJSON(inputs.geom)::jsonb,
+          'properties', to_jsonb(inputs) - 'geom'
+        ) AS feature
+        FROM (
+          SELECT saz.* 
+          FROM "SubAdministrativeZones" saz
+          JOIN "AdministrativeZones" az ON saz."administrativeZoneId" = az.id
+          WHERE az."dzongkhagId" = ${dzongkhagId}
+          ORDER BY saz.id
+        ) inputs
+      ) features;`,
+      );
+
+    return data[0][0].jsonb_build_object || {
+      type: 'FeatureCollection',
+      features: [],
+    };
   }
 
   async findAllAsGeoJson(): Promise<any> {

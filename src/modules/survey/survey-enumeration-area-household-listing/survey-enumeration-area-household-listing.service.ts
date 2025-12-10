@@ -255,6 +255,35 @@ export class SurveyEnumerationAreaHouseholdListingService {
   }
 
   /**
+   * Get household listings by structure ID
+   * @param structureId - Structure ID
+   * @returns Array of household listings for the structure
+   */
+  async findByStructure(
+    structureId: number,
+  ): Promise<SurveyEnumerationAreaHouseholdListing[]> {
+    return this.householdListingRepository.findAll({
+      where: { structureId },
+      include: [
+        {
+          model: User,
+          as: 'submitter',
+          attributes: ['id', 'name', 'phoneNumber', 'cid'],
+        },
+        {
+          model: SurveyEnumerationAreaStructure,
+          attributes: ['id', 'structureNumber', 'latitude', 'longitude'],
+        },
+        {
+          model: SurveyEnumerationArea,
+          attributes: ['id', 'surveyId', 'enumerationAreaId'],
+        },
+      ],
+      order: [['householdSerialNumber', 'ASC']],
+    });
+  }
+
+  /**
    * Get statistics for a survey enumeration area
    * @param surveyEnumerationAreaId
    * @returns Household listing statistics for the enumeration area
@@ -615,6 +644,12 @@ export class SurveyEnumerationAreaHouseholdListingService {
         // PUBLISHED - Fetch household listings
         const households = await this.householdListingRepository.findAll({
           where: { surveyEnumerationAreaId: surveyEA.id },
+          include: [
+            {
+              model: SurveyEnumerationAreaStructure,
+              attributes: ['id', 'structureNumber', 'latitude', 'longitude'],
+            },
+          ],
           order: [['householdSerialNumber', 'ASC']],
         });
 
@@ -705,6 +740,49 @@ export class SurveyEnumerationAreaHouseholdListingService {
         totalSurveysChecked,
       },
     };
+  }
+
+  /**
+   * Get current (most recent published) structures for an enumeration area
+   * Returns structures from the latest published survey
+   * @param enumerationAreaId - The enumeration area ID
+   * @returns Array of SurveyEnumerationAreaStructure from the latest published survey
+   */
+  async getCurrentEnumerationAreaStructures(
+    enumerationAreaId: number,
+  ): Promise<SurveyEnumerationAreaStructure[]> {
+    // Step 1: Find all surveys containing this enumeration area
+    const surveyEAs = await this.surveyEnumerationAreaRepository.findAll({
+      where: { enumerationAreaId },
+      include: [
+        {
+          model: Survey,
+        },
+      ],
+      order: [[{ model: Survey, as: 'survey' }, 'startDate', 'DESC']],
+    });
+
+    // Step 2: Check if any surveys found
+    if (!surveyEAs || surveyEAs.length === 0) {
+      return [];
+    }
+
+    // Step 3: Loop through surveys (newest to oldest) to find first published one
+    for (const surveyEA of surveyEAs) {
+      // Step 4: Check publishing status
+      if (surveyEA.isPublished) {
+        // PUBLISHED - Fetch structures
+        const structures = await this.structureRepository.findAll({
+          where: { surveyEnumerationAreaId: surveyEA.id },
+          order: [['structureNumber', 'ASC']],
+        });
+
+        return structures;
+      }
+    }
+
+    // Step 5: No published data found in any survey
+    return [];
   }
 
   /**

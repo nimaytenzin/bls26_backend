@@ -289,6 +289,49 @@ export class EnumerationAreaController {
     );
   }
 
+  /**
+   * Get enumeration areas by administrative zone
+   * @access Public
+   * @param administrativeZoneId - Administrative Zone ID
+   * @query withGeom - Include geometry (default: false)
+   * @query includeSubAdminZone - Include parent sub-administrative zone (default: false)
+   *
+   * @example
+   * GET /enumeration-area/by-administrative-zone/1
+   * GET /enumeration-area/by-administrative-zone/1?withGeom=true
+   * GET /enumeration-area/by-administrative-zone/1?includeSubAdminZone=true
+   */
+  @Get('by-administrative-zone/:administrativeZoneId')
+  async findByAdministrativeZone(
+    @Param('administrativeZoneId') administrativeZoneId: string,
+    @Query('withGeom') withGeom?: string,
+    @Query('includeSubAdminZone') includeSubAdminZone?: string,
+  ) {
+    const includeGeom = withGeom === 'true';
+    const includeSubAdmin = includeSubAdminZone === 'true';
+
+    return this.enumerationAreaService.findByAdministrativeZone(
+      +administrativeZoneId,
+      includeGeom,
+      includeSubAdmin,
+    );
+  }
+
+  /**
+   * Get enumeration areas by administrative zone as GeoJSON
+   * @access Public
+   * @param administrativeZoneId - Administrative Zone ID
+   * @returns GeoJSON FeatureCollection
+   */
+  @Get('geojson/by-administrative-zone/:administrativeZoneId')
+  async findAllAsGeoJsonByAdministrativeZone(
+    @Param('administrativeZoneId') administrativeZoneId: string,
+  ) {
+    return this.enumerationAreaService.findAllAsGeoJsonByAdministrativeZone(
+      +administrativeZoneId,
+    );
+  }
+
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)

@@ -253,6 +253,72 @@ export class EnumerationAreaService {
     return data[0][0].jsonb_build_object;
   }
 
+  /**
+   * Find enumeration areas by administrative zone with optional associations
+   * @param administrativeZoneId - Administrative Zone ID
+   * @param withGeom - Include geometry (default: false)
+   * @param includeSubAdminZone - Include parent sub-administrative zone (default: false)
+   */
+  async findByAdministrativeZone(
+    administrativeZoneId: number,
+    withGeom = false,
+    includeSubAdminZone = false,
+  ): Promise<EnumerationArea[]> {
+    const options: any = {
+      where: {},
+      attributes: withGeom ? undefined : { exclude: ['geom'] },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          where: { administrativeZoneId },
+          attributes: { exclude: withGeom ? [] : ['geom'] },
+          required: true,
+        },
+      ],
+    };
+
+    if (includeSubAdminZone) {
+      options.include[0].include = [
+        {
+          model: AdministrativeZone,
+          attributes: { exclude: withGeom ? [] : ['geom'] },
+        },
+      ];
+    }
+
+    return await this.enumerationAreaRepository.findAll<EnumerationArea>(
+      options,
+    );
+  }
+
+  async findAllAsGeoJsonByAdministrativeZone(
+    administrativeZoneId: number,
+  ): Promise<any> {
+    const data: any = await this.enumerationAreaRepository.sequelize.query(
+      `SELECT jsonb_build_object(
+        'type',     'FeatureCollection',
+        'features', jsonb_agg(features.feature)
+      )
+      FROM (
+        SELECT jsonb_build_object(
+          'type',       'Feature',
+          'id',         inputs.id,
+          'geometry',   ST_AsGeoJSON(geom)::jsonb,
+          'properties', to_jsonb(inputs) - 'geom'
+        ) AS feature
+        FROM (
+          SELECT ea.* 
+          FROM "EnumerationAreas" ea
+          INNER JOIN "SubAdministrativeZones" saz ON ea."subAdministrativeZoneId" = saz.id
+          WHERE saz."administrativeZoneId" = ${administrativeZoneId}
+          ORDER BY ea.id
+        ) inputs
+      ) features;`,
+    );
+
+    return data[0][0].jsonb_build_object;
+  }
+
   async findAllAsGeoJson(): Promise<any> {
     const data: any = await this.enumerationAreaRepository.sequelize.query(
       `SELECT jsonb_build_object(

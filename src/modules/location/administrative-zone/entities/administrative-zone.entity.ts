@@ -58,7 +58,7 @@ export class AdministrativeZone extends Model {
 
   @Column({
     type: DataType.GEOMETRY('MULTIPOLYGON', 4326),
-    allowNull: false,
+    allowNull: true,
   })
   geom: string;
 
