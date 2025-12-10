@@ -180,6 +180,101 @@ export class AdministrativeZoneController {
     return this.administrativeZoneService.updateGeoJsonById(+id, geoJsonDto);
   }
 
+  /**
+   * Upload GeoJSON file to update only the geometry of an administrative zone
+   * Accepts Feature, FeatureCollection, or Geometry object
+   * @param administrativeZoneId - Administrative Zone ID
+   * @param file - GeoJSON file
+   * @access Admin only
+   */
+  @Post('upload-geojson/:administrativeZoneId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+      fileFilter: (req, file, cb) => {
+        if (
+          file.mimetype === 'application/json' ||
+          file.mimetype === 'application/geo+json' ||
+          file.originalname.endsWith('.geojson') ||
+          file.originalname.endsWith('.json')
+        ) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              'Invalid file type. Only .json or .geojson files are allowed.',
+            ),
+            false,
+          );
+        }
+      },
+    }),
+  )
+  async uploadGeoJsonFile(
+    @Param('administrativeZoneId', ParseIntPipe) administrativeZoneId: number,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    try {
+      // Parse the GeoJSON file
+      const geoJsonData = JSON.parse(file.buffer.toString('utf-8'));
+
+      let geometry;
+
+      // Handle different GeoJSON formats
+      if (geoJsonData.type === 'Feature' && geoJsonData.geometry) {
+        // Single Feature
+        geometry = geoJsonData.geometry;
+      } else if (
+        geoJsonData.type === 'FeatureCollection' &&
+        geoJsonData.features &&
+        geoJsonData.features.length > 0
+      ) {
+        // FeatureCollection - use the first feature's geometry
+        geometry = geoJsonData.features[0].geometry;
+      } else if (
+        geoJsonData.type &&
+        [
+          'Point',
+          'LineString',
+          'Polygon',
+          'MultiPoint',
+          'MultiLineString',
+          'MultiPolygon',
+          'GeometryCollection',
+        ].includes(geoJsonData.type)
+      ) {
+        // Direct Geometry object
+        geometry = geoJsonData;
+      } else {
+        throw new BadRequestException(
+          'Invalid GeoJSON format. Must be a Feature, FeatureCollection, or Geometry object.',
+        );
+      }
+
+      if (!geometry) {
+        throw new BadRequestException(
+          'No geometry found in the uploaded file.',
+        );
+      }
+
+      const result = await this.administrativeZoneService.updateGeometry(
+        administrativeZoneId,
+        geometry,
+      );
+      return result;
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to process GeoJSON file: ${error.message}`,
+      );
+    }
+  }
+
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
