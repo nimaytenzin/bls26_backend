@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional, IsNumber } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsNumber, ValidateIf } from 'class-validator';
 
 export class CreateEnumerationAreaDto {
   @IsNotEmpty()
@@ -18,8 +18,9 @@ export class CreateEnumerationAreaDto {
   areaCode: string;
 
   @IsOptional()
-  @IsNumber()
-  areaSqKm: number;
+  @ValidateIf((o) => o.areaSqKm !== null && o.areaSqKm !== undefined)
+  @IsNumber({}, { message: 'areaSqKm must be a number' })
+  areaSqKm?: number | null;
 
   @IsNotEmpty()
   @IsString()

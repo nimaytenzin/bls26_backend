@@ -50,7 +50,7 @@ export class EnumerationArea extends Model {
 
   @Column({
     type: DataType.DOUBLE,
-    allowNull: false,
+    allowNull: true,
   })
   areaSqKm: number;
 
