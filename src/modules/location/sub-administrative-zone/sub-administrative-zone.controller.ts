@@ -13,6 +13,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  NotFoundException,
   ParseIntPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -205,6 +206,156 @@ export class SubAdministrativeZoneController {
     } catch (error) {
       throw new BadRequestException(
         `Failed to process GeoJSON file: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Upload single SAZ with EA (EA1) via multipart form data
+   * 
+   * Creates a Sub-Administrative Zone and its corresponding Enumeration Area in one operation.
+   * The EA is created with hardcoded values: name="EA1", areaCode="01", areaSqKm=22.22
+   * Both SAZ and EA share the same geometry from the uploaded GeoJSON file.
+   * 
+   * @access Admin only
+   * @route POST /sub-administrative-zone/upload-saz-ea
+   * @form multipart/form-data with fields:
+   *   - administrativeZoneId: number (required)
+   *   - name: string (SAZ name, required)
+   *   - areaCode: string (SAZ area code, required)
+   *   - type: string ('chiwog' or 'lap', required)
+   *   - areaSqKm: number (SAZ area in sq km, required)
+   *   - file: GeoJSON file (required, used for both SAZ and EA geometry)
+   * 
+   * @returns Object with created subAdministrativeZone and enumerationArea
+   */
+  @Post('upload-saz-ea')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+      fileFilter: (req, file, cb) => {
+        if (
+          file.mimetype === 'application/json' ||
+          file.mimetype === 'application/geo+json' ||
+          file.originalname.endsWith('.geojson') ||
+          file.originalname.endsWith('.json')
+        ) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              'Invalid file type. Only .json or .geojson files are allowed.',
+            ),
+            false,
+          );
+        }
+      },
+    }),
+  )
+  async uploadSazWithEa(
+    @Body() body: {
+      administrativeZoneId: string;
+      name: string;
+      areaCode: string;
+      type: string;
+      areaSqKm: string;
+    },
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    // Validate required fields
+    if (
+      !body.administrativeZoneId ||
+      !body.name ||
+      !body.areaCode ||
+      !body.type ||
+      !body.areaSqKm
+    ) {
+      throw new BadRequestException(
+        'Missing required fields: administrativeZoneId, name, areaCode, type, areaSqKm',
+      );
+    }
+
+    try {
+      // Parse the GeoJSON file
+      const geoJsonData = JSON.parse(file.buffer.toString('utf-8'));
+
+      let geometry;
+
+      // Handle different GeoJSON formats
+      if (geoJsonData.type === 'Feature' && geoJsonData.geometry) {
+        // Single Feature
+        geometry = geoJsonData.geometry;
+      } else if (
+        geoJsonData.type === 'FeatureCollection' &&
+        geoJsonData.features &&
+        geoJsonData.features.length > 0
+      ) {
+        // FeatureCollection - use the first feature's geometry
+        geometry = geoJsonData.features[0].geometry;
+      } else if (
+        geoJsonData.type &&
+        [
+          'Point',
+          'LineString',
+          'Polygon',
+          'MultiPoint',
+          'MultiLineString',
+          'MultiPolygon',
+          'GeometryCollection',
+        ].includes(geoJsonData.type)
+      ) {
+        // Direct Geometry object
+        geometry = geoJsonData;
+      } else {
+        throw new BadRequestException(
+          'Invalid GeoJSON format. Must be a Feature, FeatureCollection, or Geometry object.',
+        );
+      }
+
+      if (!geometry) {
+        throw new BadRequestException(
+          'No geometry found in the uploaded file.',
+        );
+      }
+
+      // Parse numeric values
+      const administrativeZoneId = parseInt(body.administrativeZoneId, 10);
+      const areaSqKm = parseFloat(body.areaSqKm);
+
+      if (isNaN(administrativeZoneId)) {
+        throw new BadRequestException('administrativeZoneId must be a number');
+      }
+      if (isNaN(areaSqKm)) {
+        throw new BadRequestException('areaSqKm must be a number');
+      }
+
+      // Validate type
+      if (!['chiwog', 'lap'].includes(body.type.toLowerCase())) {
+        throw new BadRequestException('Type must be "chiwog" or "lap"');
+      }
+
+      const result = await this.subAdministrativeZoneService.createSazWithEa(
+        administrativeZoneId,
+        body.name,
+        body.areaCode,
+        body.type.toLowerCase() as 'chiwog' | 'lap',
+        areaSqKm,
+        geometry,
+      );
+
+      return result;
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to process upload: ${error.message}`,
       );
     }
   }

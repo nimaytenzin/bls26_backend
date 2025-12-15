@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { SubAdministrativeZone } from './entities/sub-administrative-zone.entity';
 import { CreateSubAdministrativeZoneDto } from './dto/create-sub-administrative-zone.dto';
 import { UpdateSubAdministrativeZoneDto } from './dto/update-sub-administrative-zone.dto';
@@ -14,6 +14,10 @@ export class SubAdministrativeZoneService {
   constructor(
     @Inject('SUB_ADMINISTRATIVE_ZONE_REPOSITORY')
     private readonly subAdministrativeZoneRepository: typeof SubAdministrativeZone,
+    @Inject('ENUMERATION_AREA_REPOSITORY')
+    private readonly enumerationAreaRepository: typeof EnumerationArea,
+    @Inject('ADMINISTRATIVE_ZONE_REPOSITORY')
+    private readonly administrativeZoneRepository: typeof AdministrativeZone,
   ) {}
 
   async create(
@@ -406,5 +410,75 @@ export class SubAdministrativeZoneService {
     return await this.subAdministrativeZoneRepository.destroy({
       where: { id },
     });
+  }
+
+  /**
+   * Create a single SAZ with its corresponding EA (EA1) in one operation
+   * SAZ and EA share the same geometry from the GeoJSON file
+   * EA is created with hardcoded values: name="EA1", areaCode="01", areaSqKm=22.22
+   * 
+   * @param administrativeZoneId - Administrative Zone ID
+   * @param name - SAZ name
+   * @param areaCode - SAZ area code
+   * @param type - SAZ type ('chiwog' or 'lap')
+   * @param areaSqKm - SAZ area in square kilometers
+   * @param geometry - GeoJSON geometry (from parsed file)
+   * @returns Object containing both created SAZ and EA
+   */
+  async createSazWithEa(
+    administrativeZoneId: number,
+    name: string,
+    areaCode: string,
+    type: 'chiwog' | 'lap',
+    areaSqKm: number,
+    geometry: any,
+  ): Promise<{
+    subAdministrativeZone: SubAdministrativeZone;
+    enumerationArea: EnumerationArea;
+  }> {
+    // Validate administrative zone exists
+    const adminZone = await this.administrativeZoneRepository.findByPk(
+      administrativeZoneId,
+    );
+    if (!adminZone) {
+      throw new NotFoundException(
+        `Administrative Zone with ID ${administrativeZoneId} not found`,
+      );
+    }
+
+    // Validate type
+    if (!['chiwog', 'lap'].includes(type.toLowerCase())) {
+      throw new BadRequestException('Type must be "chiwog" or "lap"');
+    }
+
+    // Convert GeoJSON geometry to PostGIS format
+    const geomString = JSON.stringify(geometry);
+    const geomValue = Sequelize.fn('ST_GeomFromGeoJSON', geomString);
+
+    // Create SAZ
+    const subAdministrativeZone =
+      await this.subAdministrativeZoneRepository.create({
+        administrativeZoneId,
+        name,
+        areaCode,
+        type: type.toLowerCase() as 'chiwog' | 'lap',
+        areaSqKm,
+        geom: geomValue,
+      });
+
+    // Create EA with hardcoded values and same geometry
+    const enumerationArea = await this.enumerationAreaRepository.create({
+      subAdministrativeZoneId: subAdministrativeZone.id,
+      name: 'EA1',
+      areaCode: '01',
+      description: `Enumeration Area for ${name}`,
+      areaSqKm: 22.22,
+      geom: geomValue,
+    });
+
+    return {
+      subAdministrativeZone,
+      enumerationArea,
+    };
   }
 }
