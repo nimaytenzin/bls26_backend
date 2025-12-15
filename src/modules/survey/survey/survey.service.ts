@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { CreateSurveyDto } from './dto/create-survey.dto';
 import { UpdateSurveyDto } from './dto/update-survey.dto';
 import { SurveyStatisticsResponseDto } from './dto/survey-statistics-response.dto';
@@ -13,6 +13,9 @@ import { instanceToPlain } from 'class-transformer';
 import { SurveyEnumerationArea } from '../survey-enumeration-area/entities/survey-enumeration-area.entity';
 import { SurveyEnumerator } from '../survey-enumerator/entities/survey-enumerator.entity';
 import { SurveyEnumerationAreaHouseholdListing } from '../survey-enumeration-area-household-listing/entities/survey-enumeration-area-household-listing.entity';
+import { SurveyEnumerationAreaHouseholdListingService } from '../survey-enumeration-area-household-listing/survey-enumeration-area-household-listing.service';
+import { BulkHouseholdUploadDto } from './dto/bulk-household-upload.dto';
+import { BulkHouseholdUploadResponseDto } from './dto/bulk-household-upload-response.dto';
 import {
   PaginationUtil,
   PaginationQueryDto,
@@ -32,6 +35,7 @@ export class SurveyService {
     private readonly householdListingRepository: typeof SurveyEnumerationAreaHouseholdListing,
     @Inject('DZONGKHAG_REPOSITORY')
     private readonly dzongkhagRepository: typeof Dzongkhag,
+    private readonly householdListingService: SurveyEnumerationAreaHouseholdListingService,
   ) {}
 
   async create(createSurveyDto: CreateSurveyDto): Promise<Survey> {
@@ -891,5 +895,137 @@ export class SurveyService {
       },
       hierarchy,
     };
+  }
+
+  /**
+   * Bulk upload household counts for multiple EA-survey combinations
+   * Creates SurveyEnumerationArea if it doesn't exist and creates dummy household listings
+   * @param dto - Bulk upload DTO containing items with enumerationAreaId, surveyId, and householdCount
+   * @param userId - User ID for submittedBy field
+   * @returns Summary of created/skipped items and errors
+   */
+  async bulkUploadHouseholdCounts(
+    dto: BulkHouseholdUploadDto,
+    userId: number,
+  ): Promise<BulkHouseholdUploadResponseDto> {
+    const response: BulkHouseholdUploadResponseDto = {
+      totalItems: dto.items.length,
+      created: 0,
+      skipped: 0,
+      householdListingsCreated: 0,
+      errors: [],
+    };
+
+    // Validate and get unique EA and Survey IDs
+    const enumerationAreaIds = [
+      ...new Set(dto.items.map((item) => item.enumerationAreaId)),
+    ];
+    const surveyIds = [...new Set(dto.items.map((item) => item.surveyId))];
+
+    // Validate enumeration areas exist
+    const enumerationAreas = await EnumerationArea.findAll({
+      where: { id: enumerationAreaIds },
+      attributes: ['id'],
+    });
+    const validEAIds = new Set(enumerationAreas.map((ea) => ea.id));
+
+    // Validate surveys exist
+    const surveys = await this.surveyRepository.findAll({
+      where: { id: surveyIds },
+      attributes: ['id'],
+    });
+    const validSurveyIds = new Set(surveys.map((s) => s.id));
+
+    // Process each item
+    for (const item of dto.items) {
+      try {
+        // Skip if householdCount is 0
+        if (item.householdCount === 0) {
+          response.skipped++;
+          continue;
+        }
+
+        // Validate enumeration area exists
+        if (!validEAIds.has(item.enumerationAreaId)) {
+          response.errors.push({
+            enumerationAreaId: item.enumerationAreaId,
+            surveyId: item.surveyId,
+            householdCount: item.householdCount,
+            reason: `Enumeration area with ID ${item.enumerationAreaId} not found`,
+          });
+          continue;
+        }
+
+        // Validate survey exists
+        if (!validSurveyIds.has(item.surveyId)) {
+          response.errors.push({
+            enumerationAreaId: item.enumerationAreaId,
+            surveyId: item.surveyId,
+            householdCount: item.householdCount,
+            reason: `Survey with ID ${item.surveyId} not found`,
+          });
+          continue;
+        }
+
+        // Check if SurveyEnumerationArea exists
+        let surveyEA = await this.surveyEnumerationAreaRepository.findOne({
+          where: {
+            surveyId: item.surveyId,
+            enumerationAreaId: item.enumerationAreaId,
+          },
+        });
+
+        // Create SurveyEnumerationArea if it doesn't exist
+        if (!surveyEA) {
+          try {
+            surveyEA = await this.surveyEnumerationAreaRepository.create({
+              surveyId: item.surveyId,
+              enumerationAreaId: item.enumerationAreaId,
+            });
+            response.created++;
+          } catch (error) {
+            response.errors.push({
+              enumerationAreaId: item.enumerationAreaId,
+              surveyId: item.surveyId,
+              householdCount: item.householdCount,
+              reason: `Failed to create SurveyEnumerationArea: ${error.message}`,
+            });
+            continue;
+          }
+        }
+
+        // Create household listings using the existing createBlankHouseholdListings method
+        try {
+          const result = await this.householdListingService.createBlankHouseholdListings(
+            surveyEA.id,
+            {
+              count: item.householdCount,
+              remarks: 'Auto-uploaded household data',
+            },
+            userId,
+          );
+
+          response.householdListingsCreated += result.created;
+        } catch (error) {
+          response.errors.push({
+            enumerationAreaId: item.enumerationAreaId,
+            surveyId: item.surveyId,
+            householdCount: item.householdCount,
+            reason: `Failed to create household listings: ${error.message}`,
+          });
+          // Continue processing other items even if this one fails
+        }
+      } catch (error) {
+        // Catch any unexpected errors
+        response.errors.push({
+          enumerationAreaId: item.enumerationAreaId,
+          surveyId: item.surveyId,
+          householdCount: item.householdCount,
+          reason: `Unexpected error: ${error.message}`,
+        });
+      }
+    }
+
+    return response;
   }
 }

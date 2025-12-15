@@ -10,12 +10,15 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  Request,
 } from '@nestjs/common';
 import { SurveyService } from './survey.service';
 import { CreateSurveyDto } from './dto/create-survey.dto';
 import { UpdateSurveyDto } from './dto/update-survey.dto';
 import { SurveyStatisticsResponseDto } from './dto/survey-statistics-response.dto';
 import { SurveyEnumerationHierarchyDto } from './dto/survey-enumeration-hierarchy-response.dto';
+import { BulkHouseholdUploadDto } from './dto/bulk-household-upload.dto';
+import { BulkHouseholdUploadResponseDto } from './dto/bulk-household-upload-response.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -31,6 +34,40 @@ export class SurveyController {
   @Roles(UserRole.ADMIN)
   async create(@Body() createSurveyDto: CreateSurveyDto) {
     return this.surveyService.create(createSurveyDto);
+  }
+
+  /**
+   * Bulk upload household counts for multiple EA-survey combinations
+   * Creates SurveyEnumerationArea if it doesn't exist and creates dummy household listings
+   * @access Admin
+   * @param dto - Bulk upload DTO containing items with enumerationAreaId, surveyId, and householdCount
+   * @param req - Request object to get user ID
+   * @returns Summary of created/skipped items and errors
+   *
+   * @example
+   * POST /survey/auto-household-upload
+   * Body: {
+   *   "items": [
+   *     {
+   *       "enumerationAreaId": 1,
+   *       "surveyId": 1,
+   *       "householdCount": 25
+   *     }
+   *   ]
+   * }
+   */
+  @Post('auto-household-upload')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async bulkUploadHouseholdCounts(
+    @Body() dto: BulkHouseholdUploadDto,
+    @Request() req,
+  ): Promise<BulkHouseholdUploadResponseDto> {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new Error('User ID not found in request');
+    }
+    return this.surveyService.bulkUploadHouseholdCounts(dto, userId);
   }
 
   @Get()

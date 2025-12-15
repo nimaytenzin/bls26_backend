@@ -277,8 +277,8 @@ export class SubAdministrativeZoneController {
    * @returns GeoJSON Feature
    */
   @Get('geojson/:id')
-  async findOneAsGeoJson(@Param('id') id: string) {
-    return this.subAdministrativeZoneService.findOneAsGeoJson(+id);
+  async findOneAsGeoJson(@Param('id', ParseIntPipe) id: number) {
+    return this.subAdministrativeZoneService.findOneAsGeoJson(id);
   }
 
   /**
@@ -295,7 +295,7 @@ export class SubAdministrativeZoneController {
    */
   @Get(':id')
   async findOne(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Query('withoutGeom') withoutGeom?: string,
     @Query('includeEnumerationAreas') includeEnumerationAreas?: string,
   ) {
@@ -303,11 +303,11 @@ export class SubAdministrativeZoneController {
 
     if (withoutGeom === 'true') {
       return this.subAdministrativeZoneService.findOneWithoutGeom(
-        +id,
+        id,
         includeEAs,
       );
     }
-    return this.subAdministrativeZoneService.findOne(+id, includeEAs);
+    return this.subAdministrativeZoneService.findOne(id, includeEAs);
   }
 
   @Patch(':id')

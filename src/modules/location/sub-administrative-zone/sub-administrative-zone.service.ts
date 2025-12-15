@@ -29,8 +29,10 @@ export class SubAdministrativeZoneService {
   ): Promise<SubAdministrativeZone> {
     const { properties, geometry } = geoJsonDto;
 
-    // Convert GeoJSON geometry to PostGIS format
-    const geomString = JSON.stringify(geometry);
+    // Prepare geometry - only convert if it exists
+    const geomValue = geometry
+      ? Sequelize.fn('ST_GeomFromGeoJSON', JSON.stringify(geometry))
+      : null;
 
     const subAdministrativeZone =
       await this.subAdministrativeZoneRepository.create({
@@ -39,7 +41,7 @@ export class SubAdministrativeZoneService {
         areaCode: properties.areaCode,
         type: properties.type,
         areaSqKm: properties.areaSqKm,
-        geom: Sequelize.fn('ST_GeomFromGeoJSON', geomString),
+        geom: geomValue,
       });
 
     return subAdministrativeZone;

@@ -14,7 +14,7 @@ export class CreateEnumerationAreaGeoJsonDto {
     name: string;
     areaCode: string;
     description: string;
-    areaSqKm: number;
+    areaSqKm?: number;
   };
 
   @IsNotEmpty()

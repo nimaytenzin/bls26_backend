@@ -21,6 +21,7 @@ import { AZAnnualStatsModule } from './modules/annual statistics/administrative-
 import { DzongkhagAnnualStatsModule } from './modules/annual statistics/dzongkhag-annual-statistics/dzongkhag-annual-stats.module';
 import { SamplingModule } from './modules/sampling/sampling.module';
 import { LocationDownloadModule } from './modules/location/location-download/location-download.module';
+import { PublicApiModule } from './modules/public-api/public-api.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { LocationDownloadModule } from './modules/location/location-download/loc
     DzongkhagAnnualStatsModule,
     SamplingModule,
     LocationDownloadModule,
+    PublicApiModule,
   ],
   controllers: [AppController],
   providers: [AppService],

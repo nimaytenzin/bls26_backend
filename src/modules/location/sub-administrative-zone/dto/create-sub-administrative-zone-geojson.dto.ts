@@ -19,9 +19,9 @@ export class CreateSubAdministrativeZoneGeoJsonDto {
     type: SubAdministrativeZoneType;
   };
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsObject()
-  geometry: {
+  geometry?: {
     type: string;
     coordinates: any;
   };

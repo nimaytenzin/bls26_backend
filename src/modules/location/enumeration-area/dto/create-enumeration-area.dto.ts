@@ -17,7 +17,7 @@ export class CreateEnumerationAreaDto {
   @IsString()
   areaCode: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsNumber()
   areaSqKm: number;
 
