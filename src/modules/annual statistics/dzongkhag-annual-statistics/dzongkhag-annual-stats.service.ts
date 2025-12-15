@@ -228,12 +228,20 @@ export class DzongkhagAnnualStatsService {
             }
 
             // Step 6: Get EA annual stats for this year
-            const eaStats = await EAAnnualStats.findOne({
+            let eaStats = await EAAnnualStats.findOne({
               where: {
                 enumerationAreaId: ea.id,
                 year: year,
               },
             });
+
+            // Fallback: if no stats for current year, fetch the latest available (validated) stats for this EA
+            if (!eaStats) {
+              eaStats = await EAAnnualStats.findOne({
+                where: { enumerationAreaId: ea.id },
+                order: [['year', 'DESC']],
+              });
+            }
 
             if (eaStats) {
               eaCount++;
