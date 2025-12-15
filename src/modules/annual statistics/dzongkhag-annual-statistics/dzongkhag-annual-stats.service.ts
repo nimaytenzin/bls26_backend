@@ -21,6 +21,8 @@ import { EAAnnualStats } from '../ea-annual-statistics/entities/ea-annual-stats.
 import { SAZAnnualStatsService } from '../sub-administrative-zone-annual-statistics/saz-annual-stats.service';
 import { AZAnnualStatsService } from '../administrative-zone-annual-statistics/az-annual-stats.service';
 import { Cron } from '@nestjs/schedule';
+import { SurveyEnumerationArea } from '../../survey/survey-enumeration-area/entities/survey-enumeration-area.entity';
+import { SurveyEnumerationAreaHouseholdListing } from '../../survey/survey-enumeration-area-household-listing/entities/survey-enumeration-area-household-listing.entity';
 
 @Injectable()
 export class DzongkhagAnnualStatsService {
@@ -134,6 +136,9 @@ export class DzongkhagAnnualStatsService {
     azCount: number;
     sazCount: number;
     eaCount: number;
+    totalHouseholds: number;
+    urbanHouseholds: number;
+    ruralHouseholds: number;
   }> {
     const year = new Date().getFullYear();
     this.logger.log(`Starting hierarchical aggregation for year ${year}...`);
@@ -143,6 +148,9 @@ export class DzongkhagAnnualStatsService {
     let azCount = 0;
     let sazCount = 0;
     let eaCount = 0;
+    let totalHouseholds = 0;
+    let totalUrbanHouseholds = 0;
+    let totalRuralHouseholds = 0;
 
     // Step 1: Get all Dzongkhags
     const dzongkhags = await Dzongkhag.findAll();
@@ -227,27 +235,32 @@ export class DzongkhagAnnualStatsService {
               dzRuralEACount++;
             }
 
-            // Step 6: Get EA annual stats for this year
-            let eaStats = await EAAnnualStats.findOne({
-              where: {
-                enumerationAreaId: ea.id,
-                year: year,
-              },
+            // Step 6: Get latest published survey data (skip EAAnnualStats)
+            const latestPublishedSurveyEA = await SurveyEnumerationArea.findOne({
+              where: { enumerationAreaId: ea.id, isPublished: true },
+              order: [['publishedDate', 'DESC']],
             });
 
-            // Fallback: if no stats for current year, fetch the latest available (validated) stats for this EA
-            if (!eaStats) {
-              eaStats = await EAAnnualStats.findOne({
-                where: { enumerationAreaId: ea.id },
-                order: [['year', 'DESC']],
-              });
-            }
+            if (latestPublishedSurveyEA) {
+              const householdsCount =
+                (await SurveyEnumerationAreaHouseholdListing.count({
+                  where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
+                })) || 0;
+              const totalMale =
+                (await SurveyEnumerationAreaHouseholdListing.sum('totalMale', {
+                  where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
+                })) || 0;
+              const totalFemale =
+                (await SurveyEnumerationAreaHouseholdListing.sum('totalFemale', {
+                  where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
+                })) || 0;
 
-            if (eaStats) {
-              eaCount++;
-              sazTotalHouseholds += eaStats.totalHouseholds || 0;
-              sazTotalMale += eaStats.totalMale || 0;
-              sazTotalFemale += eaStats.totalFemale || 0;
+              if (householdsCount > 0 || totalMale > 0 || totalFemale > 0) {
+                eaCount++;
+                sazTotalHouseholds += householdsCount;
+                sazTotalMale += totalMale;
+                sazTotalFemale += totalFemale;
+              }
             }
           }
 
@@ -321,21 +334,29 @@ export class DzongkhagAnnualStatsService {
         ruralFemale: dzRuralFemale,
       });
       dzongkhagCount++;
+      // Aggregate overall household totals across all dzongkhags
+      totalHouseholds += dzTotalHouseholds;
+      totalUrbanHouseholds += dzUrbanHouseholds;
+      totalRuralHouseholds += dzRuralHouseholds;
     }
 
     const executionTime = Date.now() - startTime;
     this.logger.log(
       `Hierarchical aggregation completed in ${executionTime}ms: ` +
-        `${dzongkhagCount} Dzongkhags, ${azCount} AZs, ${sazCount} SAZs, ${eaCount} EAs with data`,
+        `${dzongkhagCount} Dzongkhags, ${azCount} AZs, ${sazCount} SAZs, ${eaCount} EAs with data, ` +
+        `Households: ${totalHouseholds} (Urban: ${totalUrbanHouseholds}, Rural: ${totalRuralHouseholds})`,
     );
 
     return {
-      message: `Successfully computed annual stats for year ${year}`,
+      message: `Successfully computed annual stats for year ${year}. Households: ${totalHouseholds} (Urban: ${totalUrbanHouseholds}, Rural: ${totalRuralHouseholds})`,
       year,
       dzongkhagCount,
       azCount,
       sazCount,
       eaCount,
+      totalHouseholds,
+      urbanHouseholds: totalUrbanHouseholds,
+      ruralHouseholds: totalRuralHouseholds,
     };
   }
 
@@ -446,19 +467,32 @@ export class DzongkhagAnnualStatsService {
               dzRuralEACount++;
             }
 
-            // Step 6: Get EA annual stats for this year
-            const eaStats = await EAAnnualStats.findOne({
-              where: {
-                enumerationAreaId: ea.id,
-                year: year,
-              },
+            // Step 6: Get latest published survey data (skip EAAnnualStats)
+            const latestPublishedSurveyEA = await SurveyEnumerationArea.findOne({
+              where: { enumerationAreaId: ea.id, isPublished: true },
+              order: [['publishedDate', 'DESC']],
             });
 
-            if (eaStats) {
-              eaCount++;
-              sazTotalHouseholds += eaStats.totalHouseholds || 0;
-              sazTotalMale += eaStats.totalMale || 0;
-              sazTotalFemale += eaStats.totalFemale || 0;
+            if (latestPublishedSurveyEA) {
+              const householdsCount =
+                (await SurveyEnumerationAreaHouseholdListing.count({
+                  where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
+                })) || 0;
+              const totalMale =
+                (await SurveyEnumerationAreaHouseholdListing.sum('totalMale', {
+                  where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
+                })) || 0;
+              const totalFemale =
+                (await SurveyEnumerationAreaHouseholdListing.sum('totalFemale', {
+                  where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
+                })) || 0;
+
+              if (householdsCount > 0 || totalMale > 0 || totalFemale > 0) {
+                eaCount++;
+                sazTotalHouseholds += householdsCount;
+                sazTotalMale += totalMale;
+                sazTotalFemale += totalFemale;
+              }
             }
           }
 
