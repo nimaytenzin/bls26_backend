@@ -4,6 +4,7 @@
 
 ```
 POST /survey/auto-household-upload
+POST /survey/auto-household-upload/csv
 ```
 
 ## Description
@@ -22,6 +23,8 @@ Bulk upload household counts for multiple Enumeration Area (EA) and Survey combi
 ```
 Authorization: Bearer <token>
 Content-Type: application/json
+OR
+multipart/form-data (for CSV)
 ```
 
 ### Body Schema
@@ -33,6 +36,48 @@ Content-Type: application/json
     surveyId: number;            // Required: ID of the survey
     householdCount: number;      // Required: Number of households (>= 0)
   }>
+}
+```
+
+### CSV Upload (multipart/form-data)
+
+- Route: `POST /survey/auto-household-upload/csv`
+- Form field: `file` (CSV), max size 10MB
+- Delimiter: comma or tab
+- Required headers:
+  - `dzongkhagCode`
+  - `adminZoneCode`
+  - `subAdminZoneCode`
+  - `eaCode`
+- Dynamic survey columns:
+  - Any column starting with `surveyId` is treated as a survey ID
+  - The cell value is the household count (must be > 0)
+- EA resolution chain:
+  - `dzongkhagCode` → `adminZoneCode` → `subAdminZoneCode` → `eaCode`
+- Behavior:
+  - If any EA cannot be resolved, the entire upload is rejected (no partial insert)
+  - Counts ≤ 0 or non-numeric are ignored
+  - Existing EA+survey data is replaced (not appended) and auto-published
+
+#### CSV Example (headers + one row)
+
+```
+dzongkhag,dzongkhagCode,adminZone,adminZoneCode,subAdminZone,subAdminZoneCode,ea,eaCode,surveyId22,surveyId23
+Bumthang,3,Choekhor,2,Dhur_Lusibee,1,EA 1,1,22,25
+```
+
+#### CSV Response
+
+```json
+{
+  "parseErrors": [],
+  "bulkResult": {
+    "totalItems": 2,
+    "created": 1,
+    "skipped": 0,
+    "householdListingsCreated": 47,
+    "errors": []
+  }
 }
 ```
 

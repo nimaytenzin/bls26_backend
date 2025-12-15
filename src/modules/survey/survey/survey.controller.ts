@@ -11,7 +11,12 @@ import {
   HttpStatus,
   Query,
   Request,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Express } from 'express';
 import { SurveyService } from './survey.service';
 import { CreateSurveyDto } from './dto/create-survey.dto';
 import { UpdateSurveyDto } from './dto/update-survey.dto';
@@ -114,6 +119,54 @@ export class SurveyController {
       throw new Error('User ID not found in request');
     }
     return this.surveyService.bulkUploadHouseholdCounts(dto, userId);
+  }
+
+  /**
+   * Bulk upload household counts via CSV (codes-based lookup)
+   *
+   * CSV headers (tab or comma separated):
+   * dzongkhag, dzongkhagCode, adminZone, adminZoneCode, subAdminZone, subAdminZoneCode, ea, eaCode, surveyId1, surveyId2, ...
+   *
+   * - EA is resolved by codes chain: dzongkhagCode -> adminZoneCode -> subAdminZoneCode -> eaCode
+   * - Any column whose header starts with "surveyId" is treated as a survey id; its value is the household count
+   * - Existing data for the same EA+survey will be replaced (not appended) and auto-published
+   *
+   * @access Admin only
+   * @route POST /survey/auto-household-upload/csv
+   * @form file: CSV file (multipart/form-data)
+   */
+  @Post('auto-household-upload/csv')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+      fileFilter: (req, file, cb) => {
+        if (
+          file.mimetype === 'text/csv' ||
+          file.mimetype === 'application/vnd.ms-excel' ||
+          file.originalname.endsWith('.csv')
+        ) {
+          cb(null, true);
+        } else {
+          cb(new BadRequestException('Invalid file type. Only CSV files are allowed.'), false);
+        }
+      },
+    }),
+  )
+  async bulkUploadHouseholdCountsCsv(
+    @UploadedFile() file: any,
+    @Request() req,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new Error('User ID not found in request');
+    }
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    return this.surveyService.bulkUploadHouseholdCountsFromCsv(file.buffer, userId);
   }
 
   @Get()

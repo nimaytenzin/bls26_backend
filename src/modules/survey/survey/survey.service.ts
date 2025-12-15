@@ -22,6 +22,7 @@ import {
   PaginationQueryDto,
   PaginatedResponse,
 } from '../../../common/utils/pagination.util';
+import { Op } from 'sequelize';
 
 @Injectable()
 export class SurveyService {
@@ -1069,5 +1070,203 @@ export class SurveyService {
     }
 
     return response;
+  }
+
+  /**
+   * Bulk upload household counts via CSV (codes-based EA lookup)
+   * CSV headers (tab or comma):
+   * dzongkhag, dzongkhagCode, adminZone, adminZoneCode, subAdminZone, subAdminZoneCode, ea, eaCode, surveyId1, surveyId2, ...
+   * Any column starting with "surveyId" is treated as a survey id; its value is householdCount.
+   */
+  async bulkUploadHouseholdCountsFromCsv(
+    fileBuffer: Buffer,
+    userId: number,
+  ): Promise<{
+    parseErrors: Array<{ row: number; reason: string }>;
+    bulkResult: BulkHouseholdUploadResponseDto | null;
+  }> {
+    const csvText = fileBuffer.toString('utf-8');
+    const lines = csvText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    if (lines.length < 2) {
+      return {
+        parseErrors: [{ row: 1, reason: 'CSV must include header and at least one data row' }],
+        bulkResult: null,
+      };
+    }
+
+    const delimiter = lines[0].includes('\t') ? '\t' : ',';
+    const splitRow = (row: string) =>
+      row
+        .split(delimiter)
+        .map((c) => c.trim().replace(/^"|"$/g, ''));
+
+    const headers = splitRow(lines[0]).map((h) => h.toLowerCase());
+
+    const requiredHeaders = [
+      'dzongkhagcode',
+      'adminzonecode',
+      'subadminzonecode',
+      'eacode',
+    ];
+
+    const missing = requiredHeaders.filter((h) => !headers.includes(h));
+    if (missing.length > 0) {
+      return {
+        parseErrors: [
+          {
+            row: 1,
+            reason: `Missing required headers: ${missing.join(', ')}`,
+          },
+        ],
+        bulkResult: null,
+      };
+    }
+
+    const surveyIdColumns = headers
+      .map((h, idx) => ({ h, idx }))
+      .filter(({ h }) => h.startsWith('surveyid'))
+      .map(({ h, idx }) => {
+        const match = h.match(/surveyid\s*(\d+)/);
+        const surveyId = match ? parseInt(match[1], 10) : NaN;
+        return { surveyId, idx };
+      })
+      .filter(({ surveyId }) => !isNaN(surveyId));
+
+    const items: BulkHouseholdUploadDto['items'] = [];
+    const parseErrors: Array<{ row: number; reason: string }> = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const row = splitRow(lines[i]);
+      const rowNumber = i + 1;
+
+      const getVal = (header: string) => row[headers.indexOf(header)] || '';
+
+      const dzCode = getVal('dzongkhagcode');
+      const azCode = getVal('adminzonecode');
+      const sazCode = getVal('subadminzonecode');
+      const eaCode = getVal('eacode');
+
+      if (!dzCode || !azCode || !sazCode || !eaCode) {
+        parseErrors.push({
+          row: rowNumber,
+          reason: 'Missing one of dzongkhagCode/adminZoneCode/subAdminZoneCode/eaCode',
+        });
+        continue;
+      }
+
+      const eaId = await this.resolveEnumerationAreaByCodes(
+        dzCode,
+        azCode,
+        sazCode,
+        eaCode,
+      );
+
+      if (!eaId) {
+        parseErrors.push({
+          row: rowNumber,
+          reason: `Enumeration area not found for codes dzongkhag=${dzCode}, admin=${azCode}, subAdmin=${sazCode}, ea=${eaCode}`,
+        });
+        continue;
+      }
+
+      for (const { surveyId, idx } of surveyIdColumns) {
+        const raw = row[idx];
+        if (raw === undefined || raw === null || raw === '') continue;
+        const count = Number(raw);
+        if (!Number.isFinite(count) || count < 0) continue;
+        if (count === 0) continue;
+
+        items.push({
+          enumerationAreaId: eaId,
+          surveyId,
+          householdCount: count,
+        });
+      }
+    }
+
+    if (items.length === 0) {
+      return {
+        parseErrors:
+          parseErrors.length > 0
+            ? parseErrors
+            : [{ row: 0, reason: 'No valid items found in CSV (counts must be > 0)' }],
+        bulkResult: null,
+      };
+    }
+
+    // Reject the whole upload if any EA resolution failed
+    if (parseErrors.length > 0) {
+      return {
+        parseErrors,
+        bulkResult: null,
+      };
+    }
+
+    const bulkResult = await this.bulkUploadHouseholdCounts({ items }, userId);
+    return {
+      parseErrors,
+      bulkResult,
+    };
+  }
+
+  private async resolveEnumerationAreaByCodes(
+    dzongkhagCode: string,
+    adminZoneCode: string,
+    subAdminZoneCode: string,
+    eaCode: string,
+  ): Promise<number | null> {
+    const dz = await Dzongkhag.findOne({
+      where: { areaCode: { [Op.or]: this.codeVariants(dzongkhagCode) } },
+    });
+    if (!dz) return null;
+
+    const az = await AdministrativeZone.findOne({
+      where: {
+        dzongkhagId: dz.id,
+        areaCode: { [Op.or]: this.codeVariants(adminZoneCode) },
+      },
+    });
+    if (!az) return null;
+
+    const saz = await SubAdministrativeZone.findOne({
+      where: {
+        administrativeZoneId: az.id,
+        areaCode: { [Op.or]: this.codeVariants(subAdminZoneCode) },
+      },
+    });
+    if (!saz) return null;
+
+    const ea = await EnumerationArea.findOne({
+      where: {
+        subAdministrativeZoneId: saz.id,
+        areaCode: { [Op.or]: this.codeVariants(eaCode) },
+      },
+    });
+    if (!ea) return null;
+
+    return ea.id;
+  }
+
+  /**
+   * Generate lookup variants to tolerate Excel-stripped leading zeros.
+   * Includes:
+   * - trimmed raw
+   * - left-padded to length 2, 3, 4
+   * - stripped-leading-zeros version
+   */
+  private codeVariants(code: string): string[] {
+    const raw = (code ?? '').trim();
+    const noZeros = raw.replace(/^0+/, '') || '0';
+    const variants = new Set<string>();
+    variants.add(raw);
+    variants.add(noZeros);
+    variants.add(raw.padStart(2, '0'));
+    variants.add(raw.padStart(3, '0'));
+    variants.add(raw.padStart(4, '0'));
+    return Array.from(variants);
   }
 }
