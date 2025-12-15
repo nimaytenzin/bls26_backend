@@ -38,13 +38,39 @@ export class SurveyController {
 
   /**
    * Bulk upload household counts for multiple EA-survey combinations
-   * Creates SurveyEnumerationArea if it doesn't exist and creates dummy household listings
-   * @access Admin
-   * @param dto - Bulk upload DTO containing items with enumerationAreaId, surveyId, and householdCount
-   * @param req - Request object to get user ID
-   * @returns Summary of created/skipped items and errors
-   *
+   * 
+   * Automatically creates SurveyEnumerationArea records if they don't exist and
+   * generates blank household listings based on the specified household counts.
+   * 
+   * **Important Behavior:**
+   * - If data already exists for the same EA-Survey combination, existing household
+   *   listings and structures are **deleted and replaced** (not appended)
+   * - All uploaded data is automatically **published** (isPublished = true)
+   * - This endpoint processes all items even if some fail
+   * 
+   * @access Admin only
+   * @route POST /survey/auto-household-upload
+   * 
+   * @param dto - Bulk upload DTO containing array of items with:
+   *   - enumerationAreaId: number (required, must exist)
+   *   - surveyId: number (required, must exist)
+   *   - householdCount: number (required, >= 0, 0 will be skipped)
+   * @param req - Request object containing authenticated user information
+   * 
+   * @returns BulkHouseholdUploadResponseDto containing:
+   *   - totalItems: Total number of items processed
+   *   - created: Number of SurveyEnumerationArea records created
+   *   - skipped: Number of items skipped (householdCount = 0)
+   *   - householdListingsCreated: Total household listings created
+   *   - errors: Array of errors with reason for each failed item
+   * 
+   * @throws {Error} If user ID is not found in request (500)
+   * @throws {UnauthorizedException} If JWT token is missing or invalid (401)
+   * @throws {ForbiddenException} If user does not have Admin role (403)
+   * @throws {BadRequestException} If request validation fails (400)
+   * 
    * @example
+   * ```json
    * POST /survey/auto-household-upload
    * Body: {
    *   "items": [
@@ -52,9 +78,29 @@ export class SurveyController {
    *       "enumerationAreaId": 1,
    *       "surveyId": 1,
    *       "householdCount": 25
+   *     },
+   *     {
+   *       "enumerationAreaId": 2,
+   *       "surveyId": 1,
+   *       "householdCount": 30
    *     }
    *   ]
    * }
+   * ```
+   * 
+   * @example Response
+   * ```json
+   * {
+   *   "totalItems": 2,
+   *   "created": 2,
+   *   "skipped": 0,
+   *   "householdListingsCreated": 55,
+   *   "errors": []
+   * }
+   * ```
+   * 
+   * @see {@link BulkHouseholdUploadDto} for request structure
+   * @see {@link BulkHouseholdUploadResponseDto} for response structure
    */
   @Post('auto-household-upload')
   @UseGuards(JwtAuthGuard, RolesGuard)

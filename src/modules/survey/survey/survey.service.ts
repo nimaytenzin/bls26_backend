@@ -14,6 +14,7 @@ import { SurveyEnumerationArea } from '../survey-enumeration-area/entities/surve
 import { SurveyEnumerator } from '../survey-enumerator/entities/survey-enumerator.entity';
 import { SurveyEnumerationAreaHouseholdListing } from '../survey-enumeration-area-household-listing/entities/survey-enumeration-area-household-listing.entity';
 import { SurveyEnumerationAreaHouseholdListingService } from '../survey-enumeration-area-household-listing/survey-enumeration-area-household-listing.service';
+import { SurveyEnumerationAreaStructure } from '../survey-enumeration-area-structure/entities/survey-enumeration-area-structure.entity';
 import { BulkHouseholdUploadDto } from './dto/bulk-household-upload.dto';
 import { BulkHouseholdUploadResponseDto } from './dto/bulk-household-upload-response.dto';
 import {
@@ -33,6 +34,8 @@ export class SurveyService {
     private readonly surveyEnumeratorRepository: typeof SurveyEnumerator,
     @Inject('SURVEY_ENUMERATION_AREA_HOUSEHOLD_LISTING_REPOSITORY')
     private readonly householdListingRepository: typeof SurveyEnumerationAreaHouseholdListing,
+    @Inject('SURVEY_ENUMERATION_AREA_STRUCTURE_REPOSITORY')
+    private readonly structureRepository: typeof SurveyEnumerationAreaStructure,
     @Inject('DZONGKHAG_REPOSITORY')
     private readonly dzongkhagRepository: typeof Dzongkhag,
     private readonly householdListingService: SurveyEnumerationAreaHouseholdListingService,
@@ -899,9 +902,13 @@ export class SurveyService {
 
   /**
    * Bulk upload household counts for multiple EA-survey combinations
-   * Creates SurveyEnumerationArea if it doesn't exist and creates dummy household listings
+   * 
+   * Creates SurveyEnumerationArea if it doesn't exist and creates blank household listings.
+   * If data already exists for the same EA-Survey combination, existing records are
+   * deleted and replaced (not appended). All uploaded data is automatically published.
+   * 
    * @param dto - Bulk upload DTO containing items with enumerationAreaId, surveyId, and householdCount
-   * @param userId - User ID for submittedBy field
+   * @param userId - User ID for submittedBy and publishedBy fields
    * @returns Summary of created/skipped items and errors
    */
   async bulkUploadHouseholdCounts(
@@ -994,6 +1001,35 @@ export class SurveyService {
           }
         }
 
+        // If data already exists for this EA-Survey combination, delete existing records (replace, not append)
+        const existingListings = await this.householdListingRepository.findAll({
+          where: { surveyEnumerationAreaId: surveyEA.id },
+          attributes: ['id', 'structureId'],
+        });
+
+        if (existingListings.length > 0) {
+          // Get unique structure IDs
+          const structureIds = [
+            ...new Set(
+              existingListings
+                .map((listing) => listing.structureId)
+                .filter((id) => id !== null && id !== undefined),
+            ),
+          ];
+
+          // Delete household listings first (to avoid foreign key constraint issues)
+          await this.householdListingRepository.destroy({
+            where: { surveyEnumerationAreaId: surveyEA.id },
+          });
+
+          // Delete associated structures
+          if (structureIds.length > 0) {
+            await this.structureRepository.destroy({
+              where: { id: structureIds },
+            });
+          }
+        }
+
         // Create household listings using the existing createBlankHouseholdListings method
         try {
           const result = await this.householdListingService.createBlankHouseholdListings(
@@ -1006,6 +1042,12 @@ export class SurveyService {
           );
 
           response.householdListingsCreated += result.created;
+
+          // Mark the SurveyEnumerationArea as published
+          surveyEA.isPublished = true;
+          surveyEA.publishedBy = userId;
+          surveyEA.publishedDate = new Date();
+          await surveyEA.save();
         } catch (error) {
           response.errors.push({
             enumerationAreaId: item.enumerationAreaId,
