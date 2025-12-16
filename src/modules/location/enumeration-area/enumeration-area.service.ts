@@ -537,14 +537,7 @@ export class EnumerationAreaService {
     
     // Find all EAs with non-null subAdministrativeZoneId
     console.log('[Migration] Fetching enumeration areas with subAdministrativeZoneId...');
-    const easWithOldId = await this.enumerationAreaRepository.findAll({
-      where: {
-        subAdministrativeZoneId: {
-          [Op.ne]: null,
-        },
-      },
-      raw: false, // Get full model instances
-    });
+    const easWithOldId = await this.enumerationAreaRepository.findAll();
 
     console.log(`[Migration] Found ${easWithOldId.length} enumeration areas with subAdministrativeZoneId`);
 
@@ -558,18 +551,7 @@ export class EnumerationAreaService {
       const eaId = ea.id;
       const sazId = ea.subAdministrativeZoneId;
 
-      // Validate EA ID
-      if (!eaId || isNaN(eaId) || !isFinite(eaId)) {
-        const eaData = ea.toJSON ? ea.toJSON() : { id: eaId, subAdministrativeZoneId: sazId };
-        console.error(`[Migration] Invalid EA ID: ${eaId}`, eaData);
-        errors.push({
-          eaId: eaId || 0,
-          error: `Invalid EA ID: ${eaId}`,
-        });
-        skipped++;
-        continue;
-      }
-
+   
       // Skip if no subAdministrativeZoneId
       if (!sazId || sazId === null || sazId === undefined) {
         console.log(`[Migration] Skipping EA ${eaId} - no subAdministrativeZoneId`);
