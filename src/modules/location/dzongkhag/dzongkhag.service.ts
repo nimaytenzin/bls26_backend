@@ -4,7 +4,7 @@ import { CreateDzongkhagDto } from './dto/create-dzongkhag.dto';
 import { UpdateDzongkhagDto } from './dto/update-dzongkhag.dto';
 import { CreateDzongkhagGeoJsonDto } from './dto/create-dzongkhag-geojson.dto';
 import { instanceToPlain } from 'class-transformer';
-import { Sequelize, QueryTypes } from 'sequelize';
+import { Sequelize, QueryTypes, Op } from 'sequelize';
 import { AdministrativeZone } from '../administrative-zone/entities/administrative-zone.entity';
 import { SubAdministrativeZone } from '../sub-administrative-zone/entities/sub-administrative-zone.entity';
 import { EnumerationArea } from '../enumeration-area/entities/enumeration-area.entity';
@@ -45,15 +45,10 @@ export class DzongkhagService {
           attributes: { exclude: withGeom ? [] : ['geom'] },
         };
 
-        // If EAs requested, nest them
+        // If EAs requested, we'll load them separately to avoid nested BelongsToMany conflicts
+        // EAs will be loaded after the main query
         if (includeEAs) {
-          subAdminZoneInclude.include = [
-            {
-              model: EnumerationArea,
-              as: 'enumerationAreas',
-              attributes: { exclude: withGeom ? [] : ['geom'] },
-            },
-          ];
+          // Don't include EAs in nested query - will load separately
         }
 
         adminZoneInclude.include = [subAdminZoneInclude];
@@ -62,7 +57,63 @@ export class DzongkhagService {
       options.include = [adminZoneInclude];
     }
 
-    return await this.dzongkhagRepository.findAll<Dzongkhag>(options);
+    const dzongkhags = await this.dzongkhagRepository.findAll<Dzongkhag>(options);
+
+    // If EAs were requested, load them separately to avoid nested BelongsToMany conflicts
+    if (includeEAs && includeAdminZones && includeSubAdminZones) {
+      // Collect all SAZ IDs from all dzongkhags
+      const sazIds: number[] = [];
+      dzongkhags.forEach((dzongkhag) => {
+        dzongkhag.administrativeZones?.forEach((az) => {
+          az.subAdministrativeZones?.forEach((saz) => {
+            sazIds.push(saz.id);
+          });
+        });
+      });
+
+      if (sazIds.length > 0) {
+        // Get all EAs linked to these SAZs via junction table
+        const enumerationAreas = await EnumerationArea.findAll({
+          attributes: withGeom ? undefined : { exclude: ['geom'] },
+          include: [
+            {
+              model: SubAdministrativeZone,
+              as: 'subAdministrativeZones',
+              through: { attributes: [] },
+              where: { id: { [Op.in]: sazIds } },
+              required: true,
+            },
+          ],
+        });
+
+        // Group EAs by SAZ ID
+        const eaMap = new Map<number, EnumerationArea[]>();
+        enumerationAreas.forEach((ea) => {
+          ea.subAdministrativeZones?.forEach((saz) => {
+            if (sazIds.includes(saz.id)) {
+              if (!eaMap.has(saz.id)) {
+                eaMap.set(saz.id, []);
+              }
+              const sazEAs = eaMap.get(saz.id);
+              if (sazEAs && !sazEAs.find((e) => e.id === ea.id)) {
+                sazEAs.push(ea);
+              }
+            }
+          });
+        });
+
+        // Attach EAs to their respective SAZs
+        dzongkhags.forEach((dzongkhag) => {
+          dzongkhag.administrativeZones?.forEach((az) => {
+            az.subAdministrativeZones?.forEach((saz) => {
+              (saz as any).enumerationAreas = eaMap.get(saz.id) || [];
+            });
+          });
+        });
+      }
+    }
+
+    return dzongkhags;
   }
 
   async findAllAsGeoJson(): Promise<any> {
@@ -169,7 +220,8 @@ export class DzongkhagService {
     if (includeEAs) {
       options.include.push({
         model: EnumerationArea,
-        as: 'enumerationAreas',
+        as: 'enumerationAreas',  // Via junction table
+        through: { attributes: [] },
         attributes: { exclude: withGeom ? [] : ['geom'] },
       });
     }
@@ -229,9 +281,11 @@ export class DzongkhagService {
           'properties', to_jsonb(inputs) - 'geom'
         ) AS feature
         FROM (
-          SELECT ea.* 
+          SELECT DISTINCT ea.* 
           FROM "EnumerationAreas" ea
-          JOIN "SubAdministrativeZones" saz ON ea."subAdministrativeZoneId" = saz.id
+          INNER JOIN "EnumerationAreaSubAdministrativeZones" junction 
+            ON ea.id = junction."enumerationAreaId"
+          JOIN "SubAdministrativeZones" saz ON junction."subAdministrativeZoneId" = saz.id
           JOIN "AdministrativeZones" az ON saz."administrativeZoneId" = az.id
           WHERE az."dzongkhagId" = ${dzongkhagId}
           ORDER BY ea.id
@@ -274,15 +328,9 @@ export class DzongkhagService {
           attributes: { exclude: withGeom ? [] : ['geom'] },
         };
 
-        // If EAs requested, nest them
+        // If EAs requested, we'll load them separately to avoid nested BelongsToMany conflicts
         if (includeEAs) {
-          subAdminZoneInclude.include = [
-            {
-              model: EnumerationArea,
-              as: 'enumerationAreas',
-              attributes: { exclude: withGeom ? [] : ['geom'] },
-            },
-          ];
+          // Don't include EAs in nested query - will load separately
         }
 
         adminZoneInclude.include = [subAdminZoneInclude];
@@ -291,7 +339,59 @@ export class DzongkhagService {
       options.include = [adminZoneInclude];
     }
 
-    return await this.dzongkhagRepository.findOne<Dzongkhag>(options);
+    const dzongkhag = await this.dzongkhagRepository.findOne<Dzongkhag>(options);
+
+    // If EAs were requested, load them separately to avoid nested BelongsToMany conflicts
+    if (includeEAs && includeAdminZones && includeSubAdminZones && dzongkhag) {
+      // Collect all SAZ IDs
+      const sazIds: number[] = [];
+      dzongkhag.administrativeZones?.forEach((az) => {
+        az.subAdministrativeZones?.forEach((saz) => {
+          sazIds.push(saz.id);
+        });
+      });
+
+      if (sazIds.length > 0) {
+        // Get all EAs linked to these SAZs via junction table
+        const enumerationAreas = await EnumerationArea.findAll({
+          attributes: withGeom ? undefined : { exclude: ['geom'] },
+          include: [
+            {
+              model: SubAdministrativeZone,
+              as: 'subAdministrativeZones',
+              through: { attributes: [] },
+              where: { id: { [Op.in]: sazIds } },
+              required: true,
+            },
+          ],
+        });
+
+        // Group EAs by SAZ ID
+        const eaMap = new Map<number, EnumerationArea[]>();
+        enumerationAreas.forEach((ea) => {
+          ea.subAdministrativeZones?.forEach((saz) => {
+            if (sazIds.includes(saz.id)) {
+              if (!eaMap.has(saz.id)) {
+                eaMap.set(saz.id, []);
+              }
+              const sazEAs = eaMap.get(saz.id);
+              if (sazEAs && !sazEAs.find((e) => e.id === ea.id)) {
+                sazEAs.push(ea);
+              }
+            }
+          });
+        });
+
+        // Attach EAs to their respective SAZs
+        dzongkhag.administrativeZones?.forEach((az) => {
+          az.subAdministrativeZones?.forEach((saz) => {
+            (saz as any).enumerationAreas = eaMap.get(saz.id) || [];
+          });
+        });
+      }
+    }
+
+    return dzongkhag;
   }
 
   /**
@@ -308,10 +408,10 @@ export class DzongkhagService {
   ): Promise<any> {
     if (includeHierarchy) {
       // Return full hierarchy: dzongkhag -> admin zones -> sub-admin zones -> enumeration areas
+      // Load hierarchy first without EAs to avoid nested BelongsToMany conflicts
       const dzongkhag = await this.dzongkhagRepository.findOne({
         where: { id: dzongkhagId },
         attributes: withGeom ? undefined : { exclude: ['geom'] },
-
         include: [
           {
             model: AdministrativeZone,
@@ -322,14 +422,7 @@ export class DzongkhagService {
                 model: SubAdministrativeZone,
                 as: 'subAdministrativeZones',
                 attributes: { exclude: withGeom ? [] : ['geom'] },
-                include: [
-                  {
-                    model: EnumerationArea,
-                    separate: true,
-                    as: 'enumerationAreas',
-                    attributes: { exclude: withGeom ? [] : ['geom'] },
-                  },
-                ],
+                // Don't include EAs here - will load separately
               },
             ],
           },
@@ -340,23 +433,83 @@ export class DzongkhagService {
         throw new Error(`Dzongkhag with ID ${dzongkhagId} not found`);
       }
 
-      return dzongkhag;
+      // Collect all SAZ IDs from the loaded hierarchy
+      const sazIds: number[] = [];
+      dzongkhag.administrativeZones?.forEach((az) => {
+        az.subAdministrativeZones?.forEach((saz) => {
+          sazIds.push(saz.id);
+        });
+      });
+
+      // Initialize enumerationAreas as empty array for all SAZs
+      const eaMap = new Map<number, EnumerationArea[]>();
+      sazIds.forEach((sazId) => {
+        eaMap.set(sazId, []);
+      });
+
+      // Load enumeration areas separately via junction table
+      if (sazIds.length > 0) {
+        const enumerationAreas = await EnumerationArea.findAll({
+          attributes: withGeom 
+            ? ['id', 'name', 'description', 'areaCode', 'geom']
+            : ['id', 'name', 'description', 'areaCode'],
+          include: [
+            {
+              model: SubAdministrativeZone,
+              as: 'subAdministrativeZones',
+              through: { attributes: [] },
+              where: { id: { [Op.in]: sazIds } },
+              required: true,
+            },
+          ],
+        });
+
+        // Group EAs by SAZ ID (an EA can appear under multiple SAZs)
+        enumerationAreas.forEach((ea) => {
+          ea.subAdministrativeZones?.forEach((saz) => {
+            if (sazIds.includes(saz.id)) {
+              const sazEAs = eaMap.get(saz.id);
+              if (sazEAs && !sazEAs.find((e) => e.id === ea.id)) {
+                sazEAs.push(ea as EnumerationArea);
+              }
+            }
+          });
+        });
+      }
+
+      // Convert to plain object and attach EAs to their respective SAZs
+      const dzongkhagPlain = dzongkhag.toJSON() as any;
+      
+      dzongkhagPlain.administrativeZones?.forEach((az: any) => {
+        az.subAdministrativeZones?.forEach((saz: any) => {
+          const eas = eaMap.get(saz.id) || [];
+          // Convert EA models to plain objects
+          saz.enumerationAreas = eas.map((ea) => {
+            const eaPlain = ea.toJSON();
+            // Remove the subAdministrativeZones from EA to avoid circular reference
+            delete eaPlain.subAdministrativeZones;
+            return eaPlain;
+          });
+        });
+      });
+
+      return dzongkhagPlain;
     } else {
       // Return flat list of enumeration areas only
       const result = await this.dzongkhagRepository.sequelize.query(
         `
-        SELECT 
+        SELECT DISTINCT
           ea.id,
-          ea."subAdministrativeZoneId",
           ea.name,
           ea."areaCode",
           ea.description,
-          ea."areaSqKm",
           ea."createdAt",
           ea."updatedAt"
           ${withGeom ? ', ea.geom' : ''}
         FROM "EnumerationAreas" ea
-        JOIN "SubAdministrativeZones" saz ON ea."subAdministrativeZoneId" = saz.id
+        INNER JOIN "EnumerationAreaSubAdministrativeZones" junction 
+          ON ea.id = junction."enumerationAreaId"
+        JOIN "SubAdministrativeZones" saz ON junction."subAdministrativeZoneId" = saz.id
         JOIN "AdministrativeZones" az ON saz."administrativeZoneId" = az.id
         WHERE az."dzongkhagId" = :dzongkhagId
         ORDER BY ea.id

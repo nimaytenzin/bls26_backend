@@ -113,7 +113,6 @@ export class SAZAnnualStatsService {
         'name',
         'areaCode',
         'type',
-        'areaSqKm',
         'administrativeZoneId',
         [
           Sequelize.fn(
@@ -192,8 +191,6 @@ export class SAZAnnualStatsService {
       const eaCount = stats?.eaCount || 0;
 
       // Calculate metrics
-      const populationDensity =
-        saz.areaSqKm > 0 ? population / saz.areaSqKm : 0;
       const averageHouseholdSize = households > 0 ? population / households : 0;
       const genderRatio = female > 0 ? (male / female) * 100 : 0;
       const malePercentage = population > 0 ? (male / population) * 100 : 0;
@@ -211,7 +208,6 @@ export class SAZAnnualStatsService {
         name: saz.name,
         areaCode: saz.areaCode,
         type: saz.type,
-        areaSqKm: saz.areaSqKm,
         administrativeZoneId,
         administrativeZoneName,
         administrativeZoneType,
@@ -223,7 +219,6 @@ export class SAZAnnualStatsService {
         totalPopulation: population,
         totalMale: male,
         totalFemale: female,
-        populationDensity: Math.round(populationDensity * 100) / 100,
         averageHouseholdSize: Math.round(averageHouseholdSize * 100) / 100,
         genderRatio: Math.round(genderRatio * 100) / 100,
         malePercentage: Math.round(malePercentage * 100) / 100,
@@ -291,7 +286,6 @@ export class SAZAnnualStatsService {
         'name',
         'areaCode',
         'type',
-        'areaSqKm',
         'administrativeZoneId',
         [
           Sequelize.fn(
@@ -389,8 +383,6 @@ export class SAZAnnualStatsService {
       const eaCount = stats?.eaCount || 0;
 
       // Calculate metrics
-      const populationDensity =
-        saz.areaSqKm > 0 ? population / saz.areaSqKm : 0;
       const averageHouseholdSize = households > 0 ? population / households : 0;
       const genderRatio = female > 0 ? (male / female) * 100 : 0;
       const malePercentage = population > 0 ? (male / population) * 100 : 0;
@@ -416,7 +408,6 @@ export class SAZAnnualStatsService {
         name: saz.name,
         areaCode: saz.areaCode,
         type: saz.type,
-        areaSqKm: saz.areaSqKm,
         administrativeZoneId,
         administrativeZoneName,
         administrativeZoneType,
@@ -428,7 +419,6 @@ export class SAZAnnualStatsService {
         totalPopulation: population,
         totalMale: male,
         totalFemale: female,
-        populationDensity: Math.round(populationDensity * 100) / 100,
         averageHouseholdSize: Math.round(averageHouseholdSize * 100) / 100,
         genderRatio: Math.round(genderRatio * 100) / 100,
         malePercentage: Math.round(malePercentage * 100) / 100,

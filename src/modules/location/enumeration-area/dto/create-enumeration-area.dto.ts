@@ -1,9 +1,15 @@
-import { IsNotEmpty, IsString, IsOptional, IsNumber, ValidateIf } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsNumber, ValidateIf, IsArray, ArrayMinSize } from 'class-validator';
 
 export class CreateEnumerationAreaDto {
+  /**
+   * Array of Sub-Administrative Zone IDs (via junction table)
+   * At least one SAZ is required
+   */
   @IsNotEmpty()
-  @IsNumber()
-  subAdministrativeZoneId: number;
+  @IsArray()
+  @ArrayMinSize(1, { message: 'At least one Sub-Administrative Zone is required' })
+  @IsNumber({}, { each: true })
+  subAdministrativeZoneIds: number[];
 
   @IsNotEmpty()
   @IsString()
@@ -16,11 +22,6 @@ export class CreateEnumerationAreaDto {
   @IsNotEmpty()
   @IsString()
   areaCode: string;
-
-  @IsOptional()
-  @ValidateIf((o) => o.areaSqKm !== null && o.areaSqKm !== undefined)
-  @IsNumber({}, { message: 'areaSqKm must be a number' })
-  areaSqKm?: number | null;
 
   @IsNotEmpty()
   @IsString()

@@ -24,10 +24,6 @@ export class CreateAdministrativeZoneDto {
   @IsEnum(AdministrativeZoneType)
   type: AdministrativeZoneType;
 
-  @IsNotEmpty()
-  @IsNumber()
-  areaSqKm: number;
-
   @IsOptional()
   @IsString()
   geom?: string;

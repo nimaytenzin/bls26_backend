@@ -15,8 +15,4 @@ export class CreateDzongkhagDto {
   @IsNotEmpty()
   @IsString()
   areaCode: string;
-
-  @IsNotEmpty()
-  @IsNumber()
-  areaSqKm: number;
 }

@@ -114,7 +114,6 @@ export class AZAnnualStatsService {
         'name',
         'areaCode',
         'type',
-        'areaSqKm',
         'dzongkhagId',
         [
           Sequelize.fn(
@@ -188,7 +187,6 @@ export class AZAnnualStatsService {
       const eaCount = stats?.eaCount || 0;
 
       // Calculate metrics
-      const populationDensity = az.areaSqKm > 0 ? population / az.areaSqKm : 0;
       const averageHouseholdSize = households > 0 ? population / households : 0;
       const genderRatio = totalFemale > 0 ? (totalMale / totalFemale) * 100 : 0;
       const malePercentage =
@@ -217,7 +215,6 @@ export class AZAnnualStatsService {
         name: az.name,
         areaCode: az.areaCode,
         type: az.type,
-        areaSqKm: az.areaSqKm,
         dzongkhagId: az.dzongkhagId,
         dzongkhagName,
         year: statsYear,
@@ -227,7 +224,6 @@ export class AZAnnualStatsService {
         totalPopulation: population,
         totalMale,
         totalFemale,
-        populationDensity: Math.round(populationDensity * 100) / 100,
         averageHouseholdSize: Math.round(averageHouseholdSize * 100) / 100,
         genderRatio: Math.round(genderRatio * 100) / 100,
         malePercentage: Math.round(malePercentage * 100) / 100,

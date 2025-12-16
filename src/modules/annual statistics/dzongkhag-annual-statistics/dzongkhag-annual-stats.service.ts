@@ -219,9 +219,16 @@ export class DzongkhagAnnualStatsService {
           let sazTotalFemale = 0;
           let sazEACount = 0;
 
-          // Step 5: Get all Enumeration Areas for this SAZ
+          // Step 5: Get all Enumeration Areas for this SAZ via junction table
           const enumerationAreas = await EnumerationArea.findAll({
-            where: { subAdministrativeZoneId: saz.id },
+            include: [
+              {
+                model: SubAdministrativeZone,
+                as: 'subAdministrativeZones',  // Via junction table
+                where: { id: saz.id },
+                through: { attributes: [] },
+              },
+            ],
           });
 
           for (const ea of enumerationAreas) {
@@ -451,9 +458,16 @@ export class DzongkhagAnnualStatsService {
           let sazTotalFemale = 0;
           let sazEACount = 0;
 
-          // Step 5: Get all Enumeration Areas for this SAZ
+          // Step 5: Get all Enumeration Areas for this SAZ via junction table
           const enumerationAreas = await EnumerationArea.findAll({
-            where: { subAdministrativeZoneId: saz.id },
+            include: [
+              {
+                model: SubAdministrativeZone,
+                as: 'subAdministrativeZones',  // Via junction table
+                where: { id: saz.id },
+                through: { attributes: [] },
+              },
+            ],
           });
 
           for (const ea of enumerationAreas) {
@@ -604,7 +618,7 @@ export class DzongkhagAnnualStatsService {
 
     // Get all dzongkhags with geometry
     const dzongkhags = await Dzongkhag.findAll({
-      attributes: ['id', 'name', 'areaCode', 'areaSqKm', 'geom'],
+      attributes: ['id', 'name', 'areaCode', 'geom'],
     });
 
     // Get all statistics for the specified year
@@ -635,8 +649,6 @@ export class DzongkhagAnnualStatsService {
         const ruralPopulation = stats.ruralMale + stats.ruralFemale;
         const urbanizationRate =
           totalPopulation > 0 ? (urbanPopulation / totalPopulation) * 100 : 0;
-        const populationDensity =
-          dzongkhag.areaSqKm > 0 ? totalPopulation / dzongkhag.areaSqKm : 0;
         const averageHouseholdSize =
           stats.totalHouseholds > 0
             ? totalPopulation / stats.totalHouseholds
@@ -674,7 +686,6 @@ export class DzongkhagAnnualStatsService {
           id: dzongkhag.id,
           name: dzongkhag.name,
           areaCode: dzongkhag.areaCode,
-          areaSqKm: dzongkhag.areaSqKm,
           year: statsYear,
           azCount: stats.azCount,
           urbanAZCount: stats.urbanAZCount,
@@ -702,7 +713,6 @@ export class DzongkhagAnnualStatsService {
           ruralMale: stats.ruralMale,
           ruralFemale: stats.ruralFemale,
           urbanizationRate: Math.round(urbanizationRate * 100) / 100,
-          populationDensity: Math.round(populationDensity * 100) / 100,
           averageHouseholdSize: Math.round(averageHouseholdSize * 100) / 100,
           genderRatio: Math.round(genderRatio * 100) / 100,
           urbanGenderRatio: Math.round(urbanGenderRatio * 100) / 100,
@@ -716,7 +726,6 @@ export class DzongkhagAnnualStatsService {
           id: dzongkhag.id,
           name: dzongkhag.name,
           areaCode: dzongkhag.areaCode,
-          areaSqKm: dzongkhag.areaSqKm,
           year: statsYear,
           azCount: 0,
           urbanAZCount: 0,
@@ -742,7 +751,6 @@ export class DzongkhagAnnualStatsService {
           ruralMale: 0,
           ruralFemale: 0,
           urbanizationRate: 0,
-          populationDensity: 0,
           averageHouseholdSize: 0,
           genderRatio: 0,
           urbanGenderRatio: 0,

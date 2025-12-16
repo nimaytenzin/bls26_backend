@@ -6,9 +6,11 @@ import {
   ForeignKey,
   BelongsTo,
   HasMany,
+  BelongsToMany,
 } from 'sequelize-typescript';
 import { AdministrativeZone } from '../../administrative-zone/entities/administrative-zone.entity';
 import { EnumerationArea } from '../../enumeration-area/entities/enumeration-area.entity';
+import { EnumerationAreaSubAdministrativeZone } from '../../enumeration-area/entities/enumeration-area-sub-administrative-zone.entity';
 
 export enum SubAdministrativeZoneType {
   CHIWOG = 'chiwog',
@@ -51,12 +53,6 @@ export class SubAdministrativeZone extends Model {
   areaCode: string;
 
   @Column({
-    type: DataType.DOUBLE,
-    allowNull: false,
-  })
-  areaSqKm: number;
-
-  @Column({
     type: DataType.GEOMETRY('MULTIPOLYGON', 4326),
     allowNull: true,
   })
@@ -65,6 +61,10 @@ export class SubAdministrativeZone extends Model {
   @BelongsTo(() => AdministrativeZone)
   administrativeZone: AdministrativeZone;
 
-  @HasMany(() => EnumerationArea)
+
+  @BelongsToMany(
+    () => EnumerationArea,
+    () => EnumerationAreaSubAdministrativeZone,
+  )
   enumerationAreas: EnumerationArea[];
 }

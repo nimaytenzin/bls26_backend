@@ -90,7 +90,7 @@ export class EnumerationAreaController {
    * @access Public
    * @param id - Enumeration Area ID
    * @query withGeom - Include geometry (default: false)
-   * @query includeSubAdminZone - Include parent sub-administrative zone (default: false)
+   * @query includeSubAdminZone - Include sub-administrative zones via junction table (default: false)
    *
    * @example
    * GET /enumeration-area/1
@@ -349,4 +349,5 @@ export class EnumerationAreaController {
   async remove(@Param('id') id: string) {
     return this.enumerationAreaService.remove(+id);
   }
+
 }

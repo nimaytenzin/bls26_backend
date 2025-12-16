@@ -7,7 +7,6 @@ export class EnumerationAreaSubmissionDto {
   id: number;
   name: string;
   areaCode: string;
-  areaSqKm?: number;
   surveyEnumerationAreaId: number;
   isEnumerated: boolean;
   isSampled: boolean;
@@ -58,7 +57,6 @@ export class DzongkhagSubmissionDto {
   id: number;
   name: string;
   areaCode: string;
-  areaSqKm?: number;
   administrativeZones: AdministrativeZoneSubmissionDto[];
   summary: {
     totalAdministrativeZones: number;

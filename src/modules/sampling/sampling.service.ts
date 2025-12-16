@@ -358,6 +358,8 @@ export class SamplingService {
               include: [
                 {
                   model: SubAdministrativeZone,
+                  as: 'subAdministrativeZones',  // Via junction table
+                  through: { attributes: [] },
                   attributes: ['id', 'name', 'areaCode', 'type'],
                   include: [
                     {
@@ -410,14 +412,14 @@ export class SamplingService {
           name: sampling.surveyEnumerationArea?.enumerationArea?.name,
           areaCode: sampling.surveyEnumerationArea?.enumerationArea?.areaCode,
           subAdminZone: {
-            name: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZone?.name,
-            areaCode: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZone?.areaCode,
-            type: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZone?.type,
+            name: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZones?.[0]?.name,
+            areaCode: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZones?.[0]?.areaCode,
+            type: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZones?.[0]?.type,
           },
           adminZone: {
-            name: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZone?.administrativeZone?.name,
-            areaCode: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZone?.administrativeZone?.areaCode,
-            type: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZone?.administrativeZone?.type,
+            name: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZones?.[0]?.administrativeZone?.name,
+            areaCode: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZones?.[0]?.administrativeZone?.areaCode,
+            type: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZones?.[0]?.administrativeZone?.type,
           },
         },
         selectedHouseholds: sampling.samples?.map((sample) => ({
@@ -577,7 +579,7 @@ export class SamplingService {
     }
 
     const adminZoneType =
-      enumerationArea?.subAdministrativeZone?.administrativeZone?.type;
+      enumerationArea?.subAdministrativeZones?.[0]?.administrativeZone?.type;
 
     if (
       adminZoneType === AdministrativeZoneType.THROMDE &&
@@ -792,16 +794,29 @@ export class SamplingService {
       ]),
     );
 
-    // Step 3: Get enumeration areas with their associations separately
+    // Step 3: Get enumeration areas with SAZs via junction table
     const enumerationAreas = await EnumerationArea.findAll({
       where: { id: enumerationAreaIds },
       attributes: {
         exclude: ['geom'],
       },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',  // Via junction table
+          through: { attributes: [] },
+          attributes: { exclude: ['geom'] },
+        },
+      ],
     });
 
+    // Collect all unique SAZ IDs from junction table (handle multiple SAZs per EA)
     const subAdminZoneIds = [
-      ...new Set(enumerationAreas.map((ea) => ea.subAdministrativeZoneId)),
+      ...new Set(
+        enumerationAreas.flatMap((ea) => 
+          ea.subAdministrativeZones?.map((saz) => saz.id) || []
+        )
+      ),
     ];
 
     // Step 4: Get sub-administrative zones
@@ -885,7 +900,6 @@ export class SamplingService {
         id: number;
         name: string;
         areaCode: string;
-        areaSqKm: number;
         administrativeZones: Map<
           number,
           {
@@ -911,11 +925,16 @@ export class SamplingService {
     let totalWithoutSampling = 0;
 
     enumerationAreas.forEach((ea) => {
-      const subAdminZone = subAdminZoneMap.get(ea.subAdministrativeZoneId);
-      if (!subAdminZone) return;
+      // Handle multiple SAZs per EA via junction table
+      const sazIds = ea.subAdministrativeZones?.map((saz) => saz.id) || [];
+      
+      // Process each SAZ linked to this EA
+      sazIds.forEach((sazId) => {
+        const subAdminZone = subAdminZoneMap.get(sazId);
+        if (!subAdminZone) return;
 
-      const adminZone = adminZoneMap.get(subAdminZone.administrativeZoneId);
-      if (!adminZone) return;
+        const adminZone = adminZoneMap.get(subAdminZone.administrativeZoneId);
+        if (!adminZone) return;
 
       const dzongkhag = dzongkhagMap.get(adminZone.dzongkhagId);
       if (!dzongkhag) return;
@@ -926,7 +945,6 @@ export class SamplingService {
           id: dzongkhag.id,
           name: dzongkhag.name,
           areaCode: dzongkhag.areaCode,
-          areaSqKm: dzongkhag.areaSqKm,
           administrativeZones: new Map(),
         });
       }
@@ -991,14 +1009,14 @@ export class SamplingService {
         hasSampling: !!sampling,
         sampling: sampling || null,
       });
-    });
+      }); // Close sazIds.forEach
+    }); // Close enumerationAreas.forEach
 
     // Convert maps to arrays for JSON response
     const hierarchy = Array.from(hierarchyMap.values()).map((dzongkhag) => ({
       id: dzongkhag.id,
       name: dzongkhag.name,
       areaCode: dzongkhag.areaCode,
-      areaSqKm: dzongkhag.areaSqKm,
       administrativeZones: Array.from(
         dzongkhag.administrativeZones.values(),
       ).map((adminZone) => ({

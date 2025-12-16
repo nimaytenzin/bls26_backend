@@ -18,7 +18,6 @@ export class EnumerationAreaInfoDto {
   id: number;
   name: string;
   areaCode: string;
-  areaSqKm: number;
 }
 
 export class HouseholdStatisticsDto {

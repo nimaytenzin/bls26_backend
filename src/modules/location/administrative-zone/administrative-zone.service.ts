@@ -34,7 +34,6 @@ export class AdministrativeZoneService {
       name: properties.name,
       areaCode: properties.areaCode,
       type: properties.type,
-      areaSqKm: properties.areaSqKm,
       geom: Sequelize.fn('ST_GeomFromGeoJSON', geomString),
     });
 
@@ -133,7 +132,6 @@ export class AdministrativeZoneService {
             name: properties.name,
             areaCode: properties.areaCode,
             type: properties.type || 'Gewog', // Default to Gewog if not specified
-            areaSqKm: properties.areaSqKm || 0,
             geom: Sequelize.fn('ST_GeomFromGeoJSON', geomString),
           });
 
@@ -273,7 +271,6 @@ export class AdministrativeZoneService {
         name: properties.name,
         areaCode: properties.areaCode,
         type: properties.type,
-        areaSqKm: properties.areaSqKm,
         geom: Sequelize.fn('ST_GeomFromGeoJSON', geomString),
       },
       {

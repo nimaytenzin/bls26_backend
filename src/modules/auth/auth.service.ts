@@ -232,7 +232,7 @@ export class AuthService {
         {
           model: Dzongkhag,
           through: { attributes: [] },
-          attributes: ['id', 'name', 'areaCode', 'areaSqKm'],
+          attributes: ['id', 'name', 'areaCode'],
         },
       ],
       order: [['name', 'ASC']],

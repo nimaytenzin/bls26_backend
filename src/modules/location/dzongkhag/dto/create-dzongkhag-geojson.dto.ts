@@ -7,7 +7,6 @@ export class CreateDzongkhagGeoJsonDto {
   properties: {
     name: string;
     areaCode: string;
-    areaSqKm: number;
   };
 
   @IsNotEmpty()

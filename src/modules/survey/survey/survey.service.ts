@@ -243,19 +243,21 @@ export class SurveyService {
       return [];
     }
 
-    // Step 3: Get enumeration areas with their complete geographic hierarchy
+    // Step 3: Get enumeration areas with their complete geographic hierarchy via junction table
     const enumerationAreas = await EnumerationArea.findAll({
       where: { id: enumerationAreaIds },
       include: [
         {
           model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',  // Via junction table
+          through: { attributes: [] },
           include: [
             {
               model: AdministrativeZone,
               include: [
                 {
                   model: Dzongkhag,
-                  attributes: ['id', 'name', 'areaCode', 'areaSqKm'],
+                  attributes: ['id', 'name', 'areaCode'],
                 },
               ],
             },
@@ -269,7 +271,9 @@ export class SurveyService {
     const dzongkhagMap = new Map();
 
     enumerationAreas.forEach((ea) => {
-      const dzongkhag = ea.subAdministrativeZone?.administrativeZone?.dzongkhag;
+      // Handle multiple SAZs per EA - use first SAZ for dzongkhag lookup
+      const firstSAZ = ea.subAdministrativeZones?.[0];
+      const dzongkhag = firstSAZ?.administrativeZone?.dzongkhag;
       if (dzongkhag) {
         dzongkhagIds.add(dzongkhag.id);
         if (!dzongkhagMap.has(dzongkhag.id)) {
@@ -277,7 +281,6 @@ export class SurveyService {
             id: dzongkhag.id,
             name: dzongkhag.name,
             areaCode: dzongkhag.areaCode,
-            areaSqKm: dzongkhag.areaSqKm,
           });
         }
       }
@@ -355,7 +358,7 @@ export class SurveyService {
           model: Dzongkhag,
           as: 'dzongkhags',
           through: { attributes: [] },
-          attributes: ['id', 'name', 'areaCode', 'areaSqKm'],
+          attributes: ['id', 'name', 'areaCode'],
         },
       ],
     });
@@ -370,12 +373,14 @@ export class SurveyService {
 
     const dzongkhagIds = supervisor.dzongkhags.map((d) => d.id);
 
-    // Step 2: Get all enumeration areas that belong to these dzongkhags
-    // EA → SubAdminZone → AdminZone → Dzongkhag
+    // Step 2: Get all enumeration areas that belong to these dzongkhags via junction table
+    // EA → SubAdminZone (via junction) → AdminZone → Dzongkhag
     const enumerationAreas = await EnumerationArea.findAll({
       include: [
         {
           model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',  // Via junction table
+          through: { attributes: [] },
           required: true,
           include: [
             {
@@ -395,7 +400,7 @@ export class SurveyService {
           attributes: ['id', 'name'],
         },
       ],
-      attributes: ['id', 'name', 'areaCode', 'areaSqKm'],
+      attributes: ['id', 'name', 'areaCode'],
     });
 
     if (enumerationAreas.length === 0) {
@@ -446,8 +451,9 @@ export class SurveyService {
       const dzongkhagMap = new Map();
 
       surveyEnumerationAreas.forEach((ea) => {
-        const dzongkhag =
-          ea.subAdministrativeZone?.administrativeZone?.dzongkhag;
+        // Handle multiple SAZs per EA - use first SAZ for grouping
+        const firstSAZ = ea.subAdministrativeZones?.[0];
+        const dzongkhag = firstSAZ?.administrativeZone?.dzongkhag;
         if (dzongkhag) {
           if (!dzongkhagMap.has(dzongkhag.id)) {
             dzongkhagMap.set(dzongkhag.id, {
@@ -462,15 +468,14 @@ export class SurveyService {
             id: ea.id,
             name: ea.name,
             areaCode: ea.areaCode,
-            areaSqKm: ea.areaSqKm,
-            subAdministrativeZone: {
-              id: ea.subAdministrativeZone.id,
-              name: ea.subAdministrativeZone.name,
+            subAdministrativeZone: firstSAZ ? {
+              id: firstSAZ.id,
+              name: firstSAZ.name,
               administrativeZone: {
-                id: ea.subAdministrativeZone.administrativeZone.id,
-                name: ea.subAdministrativeZone.administrativeZone.name,
+                id: firstSAZ.administrativeZone.id,
+                name: firstSAZ.administrativeZone.name,
               },
-            },
+            } : null,
           });
         }
       });
@@ -542,6 +547,8 @@ export class SurveyService {
         include: [
           {
             model: SubAdministrativeZone,
+            as: 'subAdministrativeZones',  // Via junction table
+            through: { attributes: [] },
             attributes: ['id'],
             include: [
               {
@@ -562,8 +569,9 @@ export class SurveyService {
       // Count unique dzongkhags
       const dzongkhagIds = new Set<number>();
       enumerationAreas.forEach((ea) => {
-        const dzongkhag =
-          ea.subAdministrativeZone?.administrativeZone?.dzongkhag;
+        // Handle multiple SAZs per EA - use first SAZ for dzongkhag lookup
+        const firstSAZ = ea.subAdministrativeZones?.[0];
+        const dzongkhag = firstSAZ?.administrativeZone?.dzongkhag;
         if (dzongkhag) {
           dzongkhagIds.add(dzongkhag.id);
         }
@@ -680,16 +688,29 @@ export class SurveyService {
 
     const enumerationAreaIds = surveyEAs.map((sea) => sea.enumerationAreaId);
 
-    // Step 2: Get enumeration areas with their associations separately
+    // Step 2: Get enumeration areas with their SAZs via junction table
     const enumerationAreas = await EnumerationArea.findAll({
       where: { id: enumerationAreaIds },
       attributes: {
         exclude: ['geom'],
       },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',  // Via junction table
+          through: { attributes: [] },
+          attributes: { exclude: ['geom'] },
+        },
+      ],
     });
 
+    // Collect all unique SAZ IDs from junction table (handle multiple SAZs per EA)
     const subAdminZoneIds = [
-      ...new Set(enumerationAreas.map((ea) => ea.subAdministrativeZoneId)),
+      ...new Set(
+        enumerationAreas.flatMap((ea) => 
+          ea.subAdministrativeZones?.map((saz) => saz.id) || []
+        )
+      ),
     ];
 
     // Step 3: Get sub-administrative zones
@@ -771,11 +792,16 @@ export class SurveyService {
     const hierarchyMap = new Map();
 
     enumerationAreas.forEach((ea) => {
-      const subAdminZone = subAdminZoneMap.get(ea.subAdministrativeZoneId);
-      if (!subAdminZone) return;
+      // Handle multiple SAZs per EA via junction table
+      const sazIds = ea.subAdministrativeZones?.map((saz) => saz.id) || [];
+      
+      // Process each SAZ linked to this EA
+      sazIds.forEach((sazId) => {
+        const subAdminZone = subAdminZoneMap.get(sazId);
+        if (!subAdminZone) return;
 
-      const adminZone = adminZoneMap.get(subAdminZone.administrativeZoneId);
-      if (!adminZone) return;
+        const adminZone = adminZoneMap.get(subAdminZone.administrativeZoneId);
+        if (!adminZone) return;
 
       const dzongkhag = dzongkhagMap.get(adminZone.dzongkhagId);
       if (!dzongkhag) return;
@@ -786,7 +812,6 @@ export class SurveyService {
           id: dzongkhag.id,
           name: dzongkhag.name,
           areaCode: dzongkhag.areaCode,
-          areaSqKm: dzongkhag.areaSqKm,
           administrativeZones: new Map(),
         });
       }
@@ -842,14 +867,14 @@ export class SurveyService {
         publishedBy: seaData?.publishedBy || null,
         publishedDate: seaData?.publishedDate || null,
       });
-    });
+      }); // Close sazIds.forEach
+    }); // Close enumerationAreas.forEach
 
     // Convert maps to arrays for JSON response
     const hierarchy = Array.from(hierarchyMap.values()).map((dzongkhag) => ({
       id: dzongkhag.id,
       name: dzongkhag.name,
       areaCode: dzongkhag.areaCode,
-      areaSqKm: dzongkhag.areaSqKm,
       administrativeZones: Array.from(
         dzongkhag.administrativeZones.values(),
       ).map((adminZone: any) => ({
@@ -1240,11 +1265,19 @@ export class SurveyService {
     });
     if (!saz) return null;
 
+    // Find EA by areaCode and check if it's linked to this SAZ via junction table
     const ea = await EnumerationArea.findOne({
       where: {
-        subAdministrativeZoneId: saz.id,
         areaCode: { [Op.or]: this.codeVariants(eaCode) },
       },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',  // Via junction table
+          where: { id: saz.id },
+          through: { attributes: [] },
+        },
+      ],
     });
     if (!ea) return null;
 

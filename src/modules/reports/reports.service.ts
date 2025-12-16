@@ -21,9 +21,7 @@ export class ReportsService {
     const dzongkhags = await this.dzongkhagService.findAll(false);
 
     // Calculate statistics
-    const totalArea = dzongkhags
-      .reduce((sum, d) => sum + parseFloat(d.areaSqKm?.toString() || '0'), 0)
-      .toFixed(2);
+    const totalArea = '0.00'; // Area calculation removed
 
     // Count administrative zones (assuming relationship exists)
     const totalAdminZones = dzongkhags.reduce(
@@ -40,7 +38,6 @@ export class ReportsService {
       dzongkhags: dzongkhags.map((d) => ({
         name: d.name,
         areaCode: d.areaCode,
-        areaSqKm: parseFloat(d.areaSqKm?.toString() || '0').toFixed(2),
       })),
       geojsonData: JSON.stringify(geojsonData),
       generatedDate: new Date().toLocaleDateString('en-US', {
@@ -118,16 +115,13 @@ export class ReportsService {
 
     const templateData = {
       totalDzongkhags: 1,
-      totalArea: parseFloat(dzongkhag.areaSqKm?.toString() || '0').toFixed(2),
+      totalArea: '0.00', // Area calculation removed
       totalAdminZones: dzongkhag.administrativeZones?.length || 0,
       totalEAs: 0,
       dzongkhags: [
         {
           name: dzongkhag.name,
           areaCode: dzongkhag.areaCode,
-          areaSqKm: parseFloat(dzongkhag.areaSqKm?.toString() || '0').toFixed(
-            2,
-          ),
         },
       ],
       geojsonData: JSON.stringify(filteredGeojson),

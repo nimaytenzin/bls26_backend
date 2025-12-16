@@ -214,7 +214,7 @@ export class SubAdministrativeZoneController {
    * Upload single SAZ with EA (EA1) via multipart form data
    * 
    * Creates a Sub-Administrative Zone and its corresponding Enumeration Area in one operation.
-   * The EA is created with hardcoded values: name="EA1", areaCode="01", areaSqKm=22.22
+   * The EA is created with hardcoded values: name="EA1", areaCode="01"
    * Both SAZ and EA share the same geometry from the uploaded GeoJSON file.
    * 
    * @access Admin only
@@ -224,7 +224,6 @@ export class SubAdministrativeZoneController {
    *   - name: string (SAZ name, required)
    *   - areaCode: string (SAZ area code, required)
    *   - type: string ('chiwog' or 'lap', required)
-   *   - areaSqKm: number (SAZ area in sq km, required)
    *   - file: GeoJSON file (required, used for both SAZ and EA geometry)
    * 
    * @returns Object with created subAdministrativeZone and enumerationArea
@@ -260,7 +259,6 @@ export class SubAdministrativeZoneController {
       name: string;
       areaCode: string;
       type: string;
-      areaSqKm: string;
     },
     @UploadedFile() file: any,
   ) {
@@ -273,11 +271,10 @@ export class SubAdministrativeZoneController {
       !body.administrativeZoneId ||
       !body.name ||
       !body.areaCode ||
-      !body.type ||
-      !body.areaSqKm
+      !body.type
     ) {
       throw new BadRequestException(
-        'Missing required fields: administrativeZoneId, name, areaCode, type, areaSqKm',
+        'Missing required fields: administrativeZoneId, name, areaCode, type',
       );
     }
 
@@ -326,13 +323,9 @@ export class SubAdministrativeZoneController {
 
       // Parse numeric values
       const administrativeZoneId = parseInt(body.administrativeZoneId, 10);
-      const areaSqKm = parseFloat(body.areaSqKm);
 
       if (isNaN(administrativeZoneId)) {
         throw new BadRequestException('administrativeZoneId must be a number');
-      }
-      if (isNaN(areaSqKm)) {
-        throw new BadRequestException('areaSqKm must be a number');
       }
 
       // Validate type
@@ -345,7 +338,6 @@ export class SubAdministrativeZoneController {
         body.name,
         body.areaCode,
         body.type.toLowerCase() as 'chiwog' | 'lap',
-        areaSqKm,
         geometry,
       );
 

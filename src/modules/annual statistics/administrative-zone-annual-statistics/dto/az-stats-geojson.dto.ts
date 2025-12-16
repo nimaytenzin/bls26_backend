@@ -21,7 +21,6 @@ export interface AZStatsProperties {
   name: string;
   areaCode: string;
   type: 'Gewog' | 'Thromde'; // Gewog = Rural, Thromde = Urban
-  areaSqKm: number;
   dzongkhagId: number;
   dzongkhagName: string;
 
@@ -41,7 +40,6 @@ export interface AZStatsProperties {
   totalFemale: number;
 
   // Calculated metrics
-  populationDensity: number; // Population per sq km
   averageHouseholdSize: number; // Total population / total households
   genderRatio: number; // Males per 100 females
   malePercentage: number;

@@ -10,11 +10,10 @@ export class CreateEnumerationAreaGeoJsonDto {
   @IsNotEmpty()
   @IsObject()
   properties: {
-    subAdministrativeZoneId: number;
+    subAdministrativeZoneIds: number[];  // Array of SAZ IDs (via junction table)
     name: string;
     areaCode: string;
     description: string;
-    areaSqKm?: number;
   };
 
   @IsNotEmpty()

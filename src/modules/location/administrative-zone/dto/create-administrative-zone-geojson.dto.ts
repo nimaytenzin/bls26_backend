@@ -15,7 +15,6 @@ export class CreateAdministrativeZoneGeoJsonDto {
     dzongkhagId: number;
     name: string;
     areaCode: string;
-    areaSqKm: number;
     type: AdministrativeZoneType;
   };
 

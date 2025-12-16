@@ -126,8 +126,7 @@ export class EnumerationAreaResponseDto {
   id: number;
   name: string;
   areaCode: string;
-  areaSqKm: number | null;
-  subAdministrativeZoneId: number;
+  subAdministrativeZoneIds: number[];  // Via junction table (array of SAZ IDs)
   createdAt: Date;
   updatedAt: Date;
 }

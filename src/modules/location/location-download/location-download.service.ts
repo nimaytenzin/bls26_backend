@@ -133,7 +133,7 @@ export class LocationDownloadService {
       };
     }
 
-    // Get enumeration areas for these sub-admin zones
+    // Get enumeration areas for these sub-admin zones via junction table
     const enumerationAreaRepo = (this.enumerationAreaService as any).enumerationAreaRepository;
     const data: any = await enumerationAreaRepo.sequelize.query(
       `SELECT jsonb_build_object(
@@ -147,7 +147,14 @@ export class LocationDownloadService {
           'geometry',   ST_AsGeoJSON(geom)::jsonb,
           'properties', to_jsonb(inputs) - 'geom'
         ) AS feature
-        FROM (SELECT * FROM "EnumerationAreas" WHERE "subAdministrativeZoneId" = ANY(ARRAY[${subAdminZoneIds.join(',')}]) ORDER BY id) inputs
+        FROM (
+          SELECT DISTINCT ea.* 
+          FROM "EnumerationAreas" ea
+          INNER JOIN "EnumerationAreaSubAdministrativeZones" junction 
+            ON ea.id = junction."enumerationAreaId"
+          WHERE junction."subAdministrativeZoneId" = ANY(ARRAY[${subAdminZoneIds.join(',')}])
+          ORDER BY ea.id
+        ) inputs
       ) features;`,
     );
 
@@ -281,7 +288,7 @@ export class LocationDownloadService {
       };
     }
 
-    // Get enumeration areas for these sub-admin zones
+    // Get enumeration areas for these sub-admin zones via junction table
     const enumerationAreaRepo = (this.enumerationAreaService as any).enumerationAreaRepository;
     const data: any = await enumerationAreaRepo.sequelize.query(
       `SELECT jsonb_build_object(
@@ -295,7 +302,14 @@ export class LocationDownloadService {
           'geometry',   ST_AsGeoJSON(geom)::jsonb,
           'properties', to_jsonb(inputs) - 'geom'
         ) AS feature
-        FROM (SELECT * FROM "EnumerationAreas" WHERE "subAdministrativeZoneId" = ANY(ARRAY[${subAdminZoneIds.join(',')}]) ORDER BY id) inputs
+        FROM (
+          SELECT DISTINCT ea.* 
+          FROM "EnumerationAreas" ea
+          INNER JOIN "EnumerationAreaSubAdministrativeZones" junction 
+            ON ea.id = junction."enumerationAreaId"
+          WHERE junction."subAdministrativeZoneId" = ANY(ARRAY[${subAdminZoneIds.join(',')}])
+          ORDER BY ea.id
+        ) inputs
       ) features;`,
     );
 

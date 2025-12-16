@@ -202,6 +202,8 @@ export class EnumeratorRoutesService {
         include: [
           {
             model: SubAdministrativeZone,
+            as: 'subAdministrativeZones',  // Via junction table
+            through: { attributes: [] },
             attributes: {
               exclude: ['geom'],
             },
@@ -560,16 +562,29 @@ export class EnumeratorRoutesService {
       });
     });
 
-    // Step 3: Get enumeration areas separately
+    // Step 3: Get enumeration areas with SAZs via junction table
     const enumerationAreas = await EnumerationArea.findAll({
       where: { id: enumerationAreaIds },
       attributes: {
         exclude: ['geom'],
       },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',  // Via junction table
+          through: { attributes: [] },
+          attributes: { exclude: ['geom'] },
+        },
+      ],
     });
 
+    // Collect all unique SAZ IDs from junction table (handle multiple SAZs per EA)
     const subAdminZoneIds = [
-      ...new Set(enumerationAreas.map((ea) => ea.subAdministrativeZoneId)),
+      ...new Set(
+        enumerationAreas.flatMap((ea) => 
+          ea.subAdministrativeZones?.map((saz) => saz.id) || []
+        )
+      ),
     ];
 
     // Step 4: Get sub-administrative zones
@@ -617,14 +632,19 @@ export class EnumeratorRoutesService {
     const hierarchyMap = new Map();
 
     enumerationAreas.forEach((ea) => {
-      const subAdminZone = subAdminZoneMap.get(ea.subAdministrativeZoneId);
-      if (!subAdminZone) return;
+      // Handle multiple SAZs per EA via junction table
+      const sazIds = ea.subAdministrativeZones?.map((saz) => saz.id) || [];
+      
+      // Process each SAZ linked to this EA
+      sazIds.forEach((sazId) => {
+        const subAdminZone = subAdminZoneMap.get(sazId);
+        if (!subAdminZone) return;
 
-      const adminZone = adminZoneMap.get(subAdminZone.administrativeZoneId);
-      if (!adminZone) return;
+        const adminZone = adminZoneMap.get(subAdminZone.administrativeZoneId);
+        if (!adminZone) return;
 
-      const dzongkhag = dzongkhagMap.get(adminZone.dzongkhagId);
-      if (!dzongkhag) return;
+        const dzongkhag = dzongkhagMap.get(adminZone.dzongkhagId);
+        if (!dzongkhag) return;
 
       const surveyEA = surveyEAMap.get(ea.id);
       if (!surveyEA) return;
@@ -641,7 +661,6 @@ export class EnumeratorRoutesService {
           id: dzongkhag.id,
           name: dzongkhag.name,
           areaCode: dzongkhag.areaCode,
-          areaSqKm: dzongkhag.areaSqKm,
           administrativeZones: new Map(),
         });
       }
@@ -681,7 +700,6 @@ export class EnumeratorRoutesService {
         id: ea.id,
         name: ea.name,
         areaCode: ea.areaCode,
-        areaSqKm: ea.areaSqKm,
         surveyEnumerationAreaId: surveyEA.id,
         isEnumerated: surveyEA.isEnumerated,
         isSampled: surveyEA.isSampled,
@@ -694,7 +712,8 @@ export class EnumeratorRoutesService {
         totalFemale: householdData.totalFemale,
         totalPopulation: householdData.totalMale + householdData.totalFemale,
       });
-    });
+      }); // Close sazIds.forEach
+    }); // Close enumerationAreas.forEach
 
     // Convert maps to arrays and calculate summaries
     const hierarchy = Array.from(hierarchyMap.values()).map((dzongkhag) => {
@@ -808,7 +827,6 @@ export class EnumeratorRoutesService {
         id: dzongkhag.id,
         name: dzongkhag.name,
         areaCode: dzongkhag.areaCode,
-        areaSqKm: dzongkhag.areaSqKm,
         administrativeZones,
         summary: dzongkhagSummary,
       };

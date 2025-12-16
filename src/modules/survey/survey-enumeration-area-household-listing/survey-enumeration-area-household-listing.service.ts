@@ -807,7 +807,7 @@ export class SurveyEnumerationAreaHouseholdListingService {
           include: [
             {
               model: EnumerationArea,
-              attributes: ['id', 'name', 'areaCode', 'subAdministrativeZoneId'],
+              attributes: ['id', 'name', 'areaCode'],
             },
             {
               model: Survey,
@@ -847,6 +847,8 @@ export class SurveyEnumerationAreaHouseholdListingService {
       include: [
         {
           model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',  // Via junction table
+          through: { attributes: [] },
           include: [
             {
               model: AdministrativeZone,
@@ -859,15 +861,18 @@ export class SurveyEnumerationAreaHouseholdListingService {
 
     // Create a map for quick lookup
     const eaMap = new Map(
-      enumerationAreas.map((ea) => [
-        ea.id,
-        {
-          ea,
-          saz: ea.subAdministrativeZone,
-          az: ea.subAdministrativeZone?.administrativeZone,
-          dzongkhag: ea.subAdministrativeZone?.administrativeZone?.dzongkhag,
-        },
-      ]),
+      enumerationAreas.map((ea) => {
+        const firstSAZ = ea.subAdministrativeZones?.[0];
+        return [
+          ea.id,
+          {
+            ea,
+            saz: firstSAZ,
+            az: firstSAZ?.administrativeZone,
+            dzongkhag: firstSAZ?.administrativeZone?.dzongkhag,
+          },
+        ];
+      }),
     );
 
     // Calculate duration
@@ -1036,6 +1041,8 @@ export class SurveyEnumerationAreaHouseholdListingService {
             include: [
               {
                 model: SubAdministrativeZone,
+                as: 'subAdministrativeZones',  // Via junction table
+                through: { attributes: [] },
                 include: [
                   {
                     model: AdministrativeZone,
@@ -1075,8 +1082,9 @@ export class SurveyEnumerationAreaHouseholdListingService {
 
     const survey = surveyEA.survey;
     const ea = surveyEA.enumerationArea;
-    const saz = ea?.subAdministrativeZone;
-    const az = saz?.administrativeZone;
+    const firstSAZ = ea?.subAdministrativeZones?.[0];
+    const saz = firstSAZ;
+    const az = firstSAZ?.administrativeZone;
     const dzongkhag = az?.dzongkhag;
 
     // Get supervisors for this dzongkhag
@@ -1201,6 +1209,8 @@ export class SurveyEnumerationAreaHouseholdListingService {
             include: [
               {
                 model: SubAdministrativeZone,
+                as: 'subAdministrativeZones',  // Via junction table
+                through: { attributes: [] },
                 include: [
                   {
                     model: AdministrativeZone,
@@ -1235,8 +1245,9 @@ export class SurveyEnumerationAreaHouseholdListingService {
 
     const survey = surveyEA.survey;
     const ea = surveyEA.enumerationArea;
-    const saz = ea?.subAdministrativeZone;
-    const az = saz?.administrativeZone;
+    const firstSAZ = ea?.subAdministrativeZones?.[0];
+    const saz = firstSAZ;
+    const az = firstSAZ?.administrativeZone;
     const dzongkhag = az?.dzongkhag;
     const dzongkhagId = dzongkhag?.id || az?.dzongkhagId;
 
@@ -1369,6 +1380,8 @@ export class SurveyEnumerationAreaHouseholdListingService {
       include: [
         {
           model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',  // Via junction table
+          through: { attributes: [] },
           include: [
             {
               model: AdministrativeZone,
@@ -1381,7 +1394,8 @@ export class SurveyEnumerationAreaHouseholdListingService {
 
     const dzongkhagIds = new Set<number>();
     enumerationAreas.forEach((ea) => {
-      const dzongkhag = ea.subAdministrativeZone?.administrativeZone?.dzongkhag;
+      const firstSAZ = ea.subAdministrativeZones?.[0];
+      const dzongkhag = firstSAZ?.administrativeZone?.dzongkhag;
       if (dzongkhag) {
         dzongkhagIds.add(dzongkhag.id);
       }

@@ -15,7 +15,6 @@ export class CreateSubAdministrativeZoneGeoJsonDto {
     administrativeZoneId: number;
     name: string;
     areaCode: string;
-    areaSqKm: number;
     type: SubAdministrativeZoneType;
   };
 

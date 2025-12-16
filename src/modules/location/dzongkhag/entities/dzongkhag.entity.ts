@@ -33,12 +33,6 @@ export class Dzongkhag extends Model {
   areaCode: string;
 
   @Column({
-    type: DataType.DOUBLE,
-    allowNull: false,
-  })
-  areaSqKm: number;
-
-  @Column({
     type: DataType.GEOMETRY('MULTIPOLYGON', 4326),
     allowNull: true,
   })

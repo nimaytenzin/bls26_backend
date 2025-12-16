@@ -20,10 +20,6 @@ export class CreateSubAdministrativeZoneDto {
   @IsString()
   areaCode?: string;
 
-  @IsNotEmpty()
-  @IsNumber()
-  areaSqKm: number;
-
   @IsOptional()
   @IsString()
   geom?: string;

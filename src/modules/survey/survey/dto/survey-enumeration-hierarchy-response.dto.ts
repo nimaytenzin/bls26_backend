@@ -41,7 +41,6 @@ export class DzongkhagHierarchyDto {
   id: number;
   name: string;
   areaCode: string;
-  areaSqKm: number;
   administrativeZones: AdministrativeZoneHierarchyDto[];
 }
 

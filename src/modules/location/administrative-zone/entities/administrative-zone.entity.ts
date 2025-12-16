@@ -51,12 +51,6 @@ export class AdministrativeZone extends Model {
   type: AdministrativeZoneType;
 
   @Column({
-    type: DataType.DOUBLE,
-    allowNull: false,
-  })
-  areaSqKm: number;
-
-  @Column({
     type: DataType.GEOMETRY('MULTIPOLYGON', 4326),
     allowNull: true,
   })

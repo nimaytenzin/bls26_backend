@@ -20,7 +20,6 @@ export interface DzongkhagStatsProperties {
   id: number;
   name: string;
   areaCode: string;
-  areaSqKm: number;
 
   // Statistics year
   year: number;
@@ -56,7 +55,6 @@ export interface DzongkhagStatsProperties {
 
   // Calculated metrics
   urbanizationRate: number; // Percentage of urban population
-  populationDensity: number; // Population per sq km
   averageHouseholdSize: number; // Total population / total households
   genderRatio: number; // Males per 100 females
   urbanGenderRatio: number;

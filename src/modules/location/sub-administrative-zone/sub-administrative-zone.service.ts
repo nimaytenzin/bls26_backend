@@ -8,6 +8,7 @@ import { Sequelize } from 'sequelize';
 import { AdministrativeZone } from '../administrative-zone/entities/administrative-zone.entity';
 import { Dzongkhag } from '../dzongkhag/entities/dzongkhag.entity';
 import { EnumerationArea } from '../enumeration-area/entities/enumeration-area.entity';
+import { EnumerationAreaSubAdministrativeZone } from '../enumeration-area/entities/enumeration-area-sub-administrative-zone.entity';
 
 @Injectable()
 export class SubAdministrativeZoneService {
@@ -18,6 +19,8 @@ export class SubAdministrativeZoneService {
     private readonly enumerationAreaRepository: typeof EnumerationArea,
     @Inject('ADMINISTRATIVE_ZONE_REPOSITORY')
     private readonly administrativeZoneRepository: typeof AdministrativeZone,
+    @Inject('ENUMERATION_AREA_SUB_ADMINISTRATIVE_ZONE_REPOSITORY')
+    private readonly junctionRepository: typeof EnumerationAreaSubAdministrativeZone,
   ) {}
 
   async create(
@@ -44,7 +47,6 @@ export class SubAdministrativeZoneService {
         name: properties.name,
         areaCode: properties.areaCode,
         type: properties.type,
-        areaSqKm: properties.areaSqKm,
         geom: geomValue,
       });
 
@@ -154,7 +156,6 @@ export class SubAdministrativeZoneService {
             type: properties.type
               ? (properties.type.toLowerCase() as 'chiwog' | 'lap')
               : 'chiwog', // Default to chiwog if not specified
-            areaSqKm: properties.areaSqKm || 0,
             geom: geometry
               ? Sequelize.fn('ST_GeomFromGeoJSON', geomString)
               : null,
@@ -190,18 +191,25 @@ export class SubAdministrativeZoneService {
     id: number,
     includeEnumerationAreas = false,
   ): Promise<SubAdministrativeZone> {
+    const includeOptions: any[] = [
+      {
+        model: AdministrativeZone,
+        include: [{ model: Dzongkhag }],
+      },
+    ];
+
+    if (includeEnumerationAreas) {
+      includeOptions.push({
+        model: EnumerationArea,
+        as: 'enumerationAreas',  // Via junction table
+        through: { attributes: [] },
+      });
+    }
+
     return await this.subAdministrativeZoneRepository.findOne<SubAdministrativeZone>(
       {
         where: { id },
-        include: [
-          {
-            model: AdministrativeZone,
-            include: [{ model: Dzongkhag }],
-          },
-          {
-            model: EnumerationArea,
-          },
-        ],
+        include: includeOptions,
       },
     );
   }
@@ -218,7 +226,11 @@ export class SubAdministrativeZoneService {
     ];
 
     if (includeEnumerationAreas) {
-      includeOptions.push('enumerationAreas');
+      includeOptions.push({
+        model: EnumerationArea,
+        as: 'enumerationAreas',  // Via junction table
+        through: { attributes: [] },
+      });
     }
 
     return await this.subAdministrativeZoneRepository.findOne<SubAdministrativeZone>(
@@ -415,13 +427,12 @@ export class SubAdministrativeZoneService {
   /**
    * Create a single SAZ with its corresponding EA (EA1) in one operation
    * SAZ and EA share the same geometry from the GeoJSON file
-   * EA is created with hardcoded values: name="EA1", areaCode="01", areaSqKm=22.22
+   * EA is created with hardcoded values: name="EA1", areaCode="01"
    * 
    * @param administrativeZoneId - Administrative Zone ID
    * @param name - SAZ name
    * @param areaCode - SAZ area code
    * @param type - SAZ type ('chiwog' or 'lap')
-   * @param areaSqKm - SAZ area in square kilometers
    * @param geometry - GeoJSON geometry (from parsed file)
    * @returns Object containing both created SAZ and EA
    */
@@ -430,7 +441,6 @@ export class SubAdministrativeZoneService {
     name: string,
     areaCode: string,
     type: 'chiwog' | 'lap',
-    areaSqKm: number,
     geometry: any,
   ): Promise<{
     subAdministrativeZone: SubAdministrativeZone;
@@ -462,18 +472,21 @@ export class SubAdministrativeZoneService {
         name,
         areaCode,
         type: type.toLowerCase() as 'chiwog' | 'lap',
-        areaSqKm,
         geom: geomValue,
       });
 
     // Create EA with hardcoded values and same geometry
     const enumerationArea = await this.enumerationAreaRepository.create({
-      subAdministrativeZoneId: subAdministrativeZone.id,
       name: 'EA1',
       areaCode: '01',
       description: `Enumeration Area for ${name}`,
-      areaSqKm: 22.22,
       geom: geomValue,
+    });
+
+    // Link SAZ to EA via junction table
+    await this.junctionRepository.create({
+      enumerationAreaId: enumerationArea.id,
+      subAdministrativeZoneId: subAdministrativeZone.id,
     });
 
     return {

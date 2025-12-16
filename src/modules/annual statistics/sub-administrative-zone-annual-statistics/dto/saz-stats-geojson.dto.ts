@@ -19,7 +19,6 @@ export interface SAZStatsProperties {
   name: string;
   areaCode: string;
   type: 'chiwog' | 'lap'; // chiwog = Rural, lap = Urban
-  areaSqKm: number;
 
   // Parent references
   administrativeZoneId: number;
@@ -43,7 +42,6 @@ export interface SAZStatsProperties {
   totalFemale: number;
 
   // Calculated metrics
-  populationDensity: number; // Population per sq km
   averageHouseholdSize: number; // Total population / total households
   genderRatio: number; // Males per 100 females
   malePercentage: number;

@@ -8,20 +8,40 @@ import { Sequelize } from 'sequelize';
 import { SubAdministrativeZone } from '../sub-administrative-zone/entities/sub-administrative-zone.entity';
 import { AdministrativeZone } from '../administrative-zone/entities/administrative-zone.entity';
 import { Dzongkhag } from '../dzongkhag/entities/dzongkhag.entity';
+import { EnumerationAreaSubAdministrativeZone } from './entities/enumeration-area-sub-administrative-zone.entity';
+import { Op } from 'sequelize';
 
 @Injectable()
 export class EnumerationAreaService {
   constructor(
     @Inject('ENUMERATION_AREA_REPOSITORY')
     private readonly enumerationAreaRepository: typeof EnumerationArea,
+    @Inject('ENUMERATION_AREA_SUB_ADMINISTRATIVE_ZONE_REPOSITORY')
+    private readonly junctionRepository: typeof EnumerationAreaSubAdministrativeZone,
   ) {}
 
   async create(
     createEnumerationAreaDto: CreateEnumerationAreaDto,
   ): Promise<EnumerationArea> {
-    return await this.enumerationAreaRepository.create(
-      instanceToPlain(createEnumerationAreaDto),
-    );
+    const { subAdministrativeZoneIds, ...eaData } = createEnumerationAreaDto;
+    
+    // Create the enumeration area
+    const enumerationArea = await this.enumerationAreaRepository.create({
+      ...eaData,
+    });
+
+    // Add all SAZs via junction table
+    if (subAdministrativeZoneIds && subAdministrativeZoneIds.length > 0) {
+      await this.junctionRepository.bulkCreate(
+        subAdministrativeZoneIds.map(sazId => ({
+          enumerationAreaId: enumerationArea.id,
+          subAdministrativeZoneId: sazId,
+        }))
+      );
+    }
+
+    // Return with SAZs loaded from junction table
+    return this.findOne(enumerationArea.id, false, true);
   }
 
   async createFromGeoJson(
@@ -32,15 +52,25 @@ export class EnumerationAreaService {
     // Convert GeoJSON geometry to PostGIS format
     const geomString = JSON.stringify(geometry);
 
+    // Create the enumeration area
     const enumerationArea = await this.enumerationAreaRepository.create({
-      subAdministrativeZoneId: properties.subAdministrativeZoneId,
       name: properties.name,
       areaCode: properties.areaCode,
       description: properties.description,
       geom: Sequelize.fn('ST_GeomFromGeoJSON', geomString),
     });
 
-    return enumerationArea;
+    // Add all SAZs via junction table
+    if (properties.subAdministrativeZoneIds && properties.subAdministrativeZoneIds.length > 0) {
+      await this.junctionRepository.bulkCreate(
+        properties.subAdministrativeZoneIds.map(sazId => ({
+          enumerationAreaId: enumerationArea.id,
+          subAdministrativeZoneId: sazId,
+        }))
+      );
+    }
+
+    return this.findOne(enumerationArea.id, false, true);
   }
 
   async bulkCreateFromGeoJson(features: any[]): Promise<{
@@ -49,7 +79,7 @@ export class EnumerationAreaService {
     created: EnumerationArea[];
     skippedItems: Array<{
       areaCode: string;
-      subAdministrativeZoneId: number;
+      subAdministrativeZoneIds: number[];
       reason: string;
     }>;
     errors: Array<{
@@ -60,12 +90,15 @@ export class EnumerationAreaService {
     const created: EnumerationArea[] = [];
     const skippedItems: Array<{
       areaCode: string;
-      subAdministrativeZoneId: number;
+      subAdministrativeZoneIds: number[];
       reason: string;
     }> = [];
     const errors: Array<{ feature: any; error: string }> = [];
 
     for (const feature of features) {
+      console.log('========================================');
+      console.log('feature', feature);
+      console.log('========================================');
       try {
         if (feature.type !== 'Feature') {
           errors.push({
@@ -77,33 +110,56 @@ export class EnumerationAreaService {
 
         const { properties, geometry } = feature;
 
+        // Get SAZ IDs from properties
+        const sazIds: number[] = properties.subAdministrativeZoneIds 
+          ? (Array.isArray(properties.subAdministrativeZoneIds) 
+              ? properties.subAdministrativeZoneIds 
+              : [properties.subAdministrativeZoneIds])
+          : [];
+
         // Validate required properties
         if (
-          !properties.subAdministrativeZoneId ||
+          sazIds.length === 0 ||
           !properties.name ||
           !properties.areaCode
         ) {
           errors.push({
             feature,
             error:
-              'Missing required properties: subAdministrativeZoneId, name, or areaCode',
+              'Missing required properties: subAdministrativeZoneIds (array), name, or areaCode',
           });
           continue;
         }
 
-        // Check if EA already exists by composite key (areaCode + subAdministrativeZoneId)
+        console.log('========================================');
+        console.log('properties.areaCode', properties.areaCode);
+        console.log('========================================');
+        // Check if EA already exists with the same areaCode AND subAdministrativeZoneId combination
+        // Since EA can have multiple SAZs, we need to check the combination of areaCode + SAZ ID
         const existingEA = await this.enumerationAreaRepository.findOne({
           where: {
             areaCode: properties.areaCode,
-            subAdministrativeZoneId: properties.subAdministrativeZoneId,
           },
+          include: [
+            {
+              model: SubAdministrativeZone,
+              as: 'subAdministrativeZones',
+              where: {
+                id: {
+                  [Op.in]: sazIds,
+                },
+              },
+              through: { attributes: [] },
+              required: true,
+            },
+          ],
         });
 
         if (existingEA) {
           skippedItems.push({
             areaCode: properties.areaCode,
-            subAdministrativeZoneId: properties.subAdministrativeZoneId,
-            reason: 'Enumeration Area already exists',
+            subAdministrativeZoneIds: sazIds,
+            reason: 'Enumeration Area with this areaCode and SubAdministrativeZoneId combination already exists',
           });
           continue;
         }
@@ -113,13 +169,21 @@ export class EnumerationAreaService {
 
         // Create the enumeration area
         const enumerationArea = await this.enumerationAreaRepository.create({
-          subAdministrativeZoneId: properties.subAdministrativeZoneId,
           name: properties.name,
           areaCode: properties.areaCode,
           description: properties.description || '',
-          areaSqKm: properties.areaSqKm || 0,
           geom: Sequelize.fn('ST_GeomFromGeoJSON', geomString),
         });
+
+        // Add all SAZs via junction table
+        if (sazIds.length > 0) {
+          await this.junctionRepository.bulkCreate(
+            sazIds.map(sazId => ({
+              enumerationAreaId: enumerationArea.id,
+              subAdministrativeZoneId: sazId,
+            }))
+          );
+        }
 
         created.push(enumerationArea);
       } catch (error) {
@@ -142,7 +206,7 @@ export class EnumerationAreaService {
   /**
    * Find all enumeration areas with optional associations
    * @param withGeom - Include geometry (default: false)
-   * @param includeSubAdminZone - Include parent sub-administrative zone (default: false)
+   * @param includeSubAdminZone - Include sub-administrative zones via junction table (default: false)
    */
   async findAll(
     withGeom = false,
@@ -155,35 +219,10 @@ export class EnumerationAreaService {
     if (includeSubAdminZone) {
       options.include = [
         {
-          association: 'subAdministrativeZone',
-          attributes: { exclude: withGeom ? [] : ['geom'] },
-        },
-      ];
-    }
-
-    return await this.enumerationAreaRepository.findAll<EnumerationArea>(
-      options,
-    );
-  }
-
-  /**
-   * Find single enumeration area by ID with optional associations
-   * @param id - Enumeration Area ID
-   * @param withGeom - Include geometry (default: false)
-   * @param includeSubAdminZone - Include parent sub-administrative zone (default: false)
-   */
-  async findOne(
-    id: number,
-    withGeom = false,
-    includeSubAdminZone = false,
-  ): Promise<EnumerationArea> {
-    return await this.enumerationAreaRepository.findOne({
-      where: { id },
-      attributes: { exclude: ['geom'] },
-      include: [
-        {
           model: SubAdministrativeZone,
-          attributes: { exclude: ['geom'] },
+          as: 'subAdministrativeZones',  // Via junction table
+          through: { attributes: [] },
+          attributes: { exclude: withGeom ? [] : ['geom'] },
           include: [
             {
               model: AdministrativeZone,
@@ -197,32 +236,6 @@ export class EnumerationAreaService {
             },
           ],
         },
-      ],
-    });
-  }
-
-  /**
-   * Find enumeration areas by sub-administrative zone with optional associations
-   * @param subAdministrativeZoneId - Sub-Administrative Zone ID
-   * @param withGeom - Include geometry (default: false)
-   * @param includeSubAdminZone - Include parent sub-administrative zone (default: false)
-   */
-  async findBySubAdministrativeZone(
-    subAdministrativeZoneId: number,
-    withGeom = false,
-    includeSubAdminZone = false,
-  ): Promise<EnumerationArea[]> {
-    const options: any = {
-      where: { subAdministrativeZoneId },
-      attributes: withGeom ? undefined : { exclude: ['geom'] },
-    };
-
-    if (includeSubAdminZone) {
-      options.include = [
-        {
-          association: 'subAdministrativeZone',
-          attributes: { exclude: withGeom ? [] : ['geom'] },
-        },
       ];
     }
 
@@ -231,9 +244,93 @@ export class EnumerationAreaService {
     );
   }
 
+  /**
+   * Find single enumeration area by ID with optional associations
+   * @param id - Enumeration Area ID
+   * @param withGeom - Include geometry (default: false)
+   * @param includeSubAdminZone - Include sub-administrative zones via junction table (default: false)
+   */
+  async findOne(
+    id: number,
+    withGeom = false,
+    includeSubAdminZone = false,
+  ): Promise<EnumerationArea> {
+    const include: any[] = [];
+
+    if (includeSubAdminZone) {
+      include.push({
+        model: SubAdministrativeZone,
+        as: 'subAdministrativeZones',  // Via junction table
+        through: { attributes: [] },
+        attributes: { exclude: ['geom'] },
+        include: [
+          {
+            model: AdministrativeZone,
+            attributes: { exclude: ['geom'] },
+            include: [
+              {
+                model: Dzongkhag,
+                attributes: { exclude: ['geom'] },
+              },
+            ],
+          },
+        ],
+      });
+    }
+
+    return await this.enumerationAreaRepository.findOne({
+      where: { id },
+      attributes: withGeom ? undefined : { exclude: ['geom'] },
+      include,
+    });
+  }
+
+  /**
+   * Find enumeration areas by sub-administrative zone with optional associations
+   * Uses junction table to find all EAs where the SAZ is linked
+   * @param subAdministrativeZoneId - Sub-Administrative Zone ID
+   * @param withGeom - Include geometry (default: false)
+   * @param includeSubAdminZone - Include sub-administrative zones via junction table (default: false)
+   */
+  async findBySubAdministrativeZone(
+    subAdministrativeZoneId: number,
+    withGeom = false,
+    includeSubAdminZone = false,
+  ): Promise<EnumerationArea[]> {
+    const include: any[] = [
+      {
+        model: SubAdministrativeZone,
+        as: 'subAdministrativeZones',  // Via junction table
+        where: { id: subAdministrativeZoneId },
+        through: { attributes: [] },
+        ...(includeSubAdminZone && {
+          attributes: { exclude: withGeom ? [] : ['geom'] },
+          include: [
+            {
+              model: AdministrativeZone,
+              attributes: { exclude: ['geom'] },
+              include: [
+                {
+                  model: Dzongkhag,
+                  attributes: { exclude: ['geom'] },
+                },
+              ],
+            },
+          ],
+        }),
+      },
+    ];
+
+    return await this.enumerationAreaRepository.findAll<EnumerationArea>({
+      attributes: withGeom ? undefined : { exclude: ['geom'] },
+      include,
+    });
+  }
+
   async findAllAsGeoJsonBySubAdministrativeZone(
     subAdministrativeZoneId: number,
   ): Promise<any> {
+    // Use junction table to find EAs linked to this SAZ
     const data: any = await this.enumerationAreaRepository.sequelize.query(
       `SELECT jsonb_build_object(
         'type',     'FeatureCollection',
@@ -246,7 +343,14 @@ export class EnumerationAreaService {
           'geometry',   ST_AsGeoJSON(geom)::jsonb,
           'properties', to_jsonb(inputs) - 'geom'
         ) AS feature
-        FROM (SELECT * FROM "EnumerationAreas" WHERE "subAdministrativeZoneId" = ${subAdministrativeZoneId} ORDER BY id) inputs
+        FROM (
+          SELECT ea.* 
+          FROM "EnumerationAreas" ea
+          INNER JOIN "EnumerationAreaSubAdministrativeZones" junction 
+            ON ea.id = junction."enumerationAreaId"
+          WHERE junction."subAdministrativeZoneId" = ${subAdministrativeZoneId}
+          ORDER BY ea.id
+        ) inputs
       ) features;`,
     );
 
@@ -255,6 +359,7 @@ export class EnumerationAreaService {
 
   /**
    * Find enumeration areas by administrative zone with optional associations
+   * Uses junction table to find all EAs linked to SAZs in the given administrative zone
    * @param administrativeZoneId - Administrative Zone ID
    * @param withGeom - Include geometry (default: false)
    * @param includeSubAdminZone - Include parent sub-administrative zone (default: false)
@@ -270,7 +375,9 @@ export class EnumerationAreaService {
       include: [
         {
           model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',  // Via junction table
           where: { administrativeZoneId },
+          through: { attributes: [] },
           attributes: { exclude: withGeom ? [] : ['geom'] },
           required: true,
         },
@@ -307,9 +414,11 @@ export class EnumerationAreaService {
           'properties', to_jsonb(inputs) - 'geom'
         ) AS feature
         FROM (
-          SELECT ea.* 
+          SELECT DISTINCT ea.* 
           FROM "EnumerationAreas" ea
-          INNER JOIN "SubAdministrativeZones" saz ON ea."subAdministrativeZoneId" = saz.id
+          INNER JOIN "EnumerationAreaSubAdministrativeZones" junction 
+            ON ea.id = junction."enumerationAreaId"
+          INNER JOIN "SubAdministrativeZones" saz ON junction."subAdministrativeZoneId" = saz.id
           WHERE saz."administrativeZoneId" = ${administrativeZoneId}
           ORDER BY ea.id
         ) inputs
@@ -400,4 +509,5 @@ export class EnumerationAreaService {
       where: { id },
     });
   }
+
 }
