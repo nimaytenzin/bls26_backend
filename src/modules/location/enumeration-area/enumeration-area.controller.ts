@@ -197,7 +197,6 @@ export class EnumerationAreaController {
    * @returns Migration statistics
    */
   @Post('migrate-to-junction-table')
-
   async migrateToJunctionTable() {
     return this.enumerationAreaService.migrateToJunctionTable();
   }
