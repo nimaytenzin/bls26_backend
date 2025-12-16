@@ -30,6 +30,11 @@ export class EnumerationAreaService {
       ...eaData,
     });
 
+    // Validate that the EA was created with a valid ID
+    if (!enumerationArea.id || isNaN(enumerationArea.id) || !isFinite(enumerationArea.id)) {
+      throw new Error(`Failed to create enumeration area - invalid ID: ${enumerationArea.id}`);
+    }
+
     // Add all SAZs via junction table
     if (subAdministrativeZoneIds && subAdministrativeZoneIds.length > 0) {
       await this.junctionRepository.bulkCreate(
@@ -255,6 +260,11 @@ export class EnumerationAreaService {
     withGeom = false,
     includeSubAdminZone = false,
   ): Promise<EnumerationArea> {
+    // Validate ID to prevent NaN errors
+    if (!id || isNaN(id) || !isFinite(id)) {
+      throw new Error(`Invalid ID provided to findOne: ${id}`);
+    }
+
     const include: any[] = [];
 
     if (includeSubAdminZone) {
@@ -521,46 +531,112 @@ export class EnumerationAreaService {
     migrated: number;
     skipped: number;
     alreadyExists: number;
+    errors: Array<{ eaId: number; error: string }>;
   }> {
+    console.log('[Migration] Starting migration to junction table...');
+    
     // Find all EAs with non-null subAdministrativeZoneId
-    const easWithOldId = await this.enumerationAreaRepository.findAll();
+    console.log('[Migration] Fetching enumeration areas with subAdministrativeZoneId...');
+    const easWithOldId = await this.enumerationAreaRepository.findAll({
+      where: {
+        subAdministrativeZoneId: {
+          [Op.ne]: null,
+        },
+      },
+      raw: false, // Get full model instances
+    });
+
+    console.log(`[Migration] Found ${easWithOldId.length} enumeration areas with subAdministrativeZoneId`);
 
     const totalEAs = easWithOldId.length;
     let migrated = 0;
     let skipped = 0;
     let alreadyExists = 0;
+    const errors: Array<{ eaId: number; error: string }> = [];
 
     for (const ea of easWithOldId) {
-      if (!ea.subAdministrativeZoneId) {
+      const eaId = ea.id;
+      const sazId = ea.subAdministrativeZoneId;
+
+      // Validate EA ID
+      if (!eaId || isNaN(eaId) || !isFinite(eaId)) {
+        const eaData = ea.toJSON ? ea.toJSON() : { id: eaId, subAdministrativeZoneId: sazId };
+        console.error(`[Migration] Invalid EA ID: ${eaId}`, eaData);
+        errors.push({
+          eaId: eaId || 0,
+          error: `Invalid EA ID: ${eaId}`,
+        });
         skipped++;
         continue;
       }
 
-      // Check if junction table entry already exists
-      const existingJunction = await this.junctionRepository.findOne({
-        where: {
-          enumerationAreaId: ea.id,
-          subAdministrativeZoneId: ea.subAdministrativeZoneId,
-        },
-      });
-
-      if (existingJunction) {
-        alreadyExists++;
+      // Skip if no subAdministrativeZoneId
+      if (!sazId || sazId === null || sazId === undefined) {
+        console.log(`[Migration] Skipping EA ${eaId} - no subAdministrativeZoneId`);
+        skipped++;
         continue;
       }
 
-      // Create junction table entry
+      // Validate SAZ ID
+      if (isNaN(sazId) || !isFinite(sazId)) {
+        console.error(`[Migration] Invalid SAZ ID: ${sazId} for EA ${eaId}`);
+        errors.push({
+          eaId,
+          error: `Invalid SAZ ID: ${sazId}`,
+        });
+        skipped++;
+        continue;
+      }
+
+      console.log(`[Migration] Processing EA ${eaId} (${ea.name || ea.areaCode}) with SAZ ${sazId}`);
+
+      // Check if junction table entry already exists
       try {
+        const existingJunction = await this.junctionRepository.findOne({
+          where: {
+            enumerationAreaId: eaId,
+            subAdministrativeZoneId: sazId,
+          },
+        });
+
+        if (existingJunction) {
+          console.log(`[Migration] Junction entry already exists for EA ${eaId} -> SAZ ${sazId}`);
+          alreadyExists++;
+          continue;
+        }
+
+        // Create junction table entry
+        console.log(`[Migration] Creating junction entry for EA ${eaId} -> SAZ ${sazId}`);
         await this.junctionRepository.create({
-          enumerationAreaId: ea.id,
-          subAdministrativeZoneId: ea.subAdministrativeZoneId,
+          enumerationAreaId: eaId,
+          subAdministrativeZoneId: sazId,
         });
         migrated++;
+        console.log(`[Migration] ✓ Successfully created junction entry for EA ${eaId} -> SAZ ${sazId}`);
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`[Migration] ✗ Error processing EA ${eaId} -> SAZ ${sazId}:`, errorMessage);
+        console.error(`[Migration] Error details:`, error);
+        errors.push({
+          eaId,
+          error: errorMessage,
+        });
         // If creation fails (e.g., duplicate key), count as already exists
         alreadyExists++;
       }
     }
+
+    console.log('[Migration] ========================================');
+    console.log('[Migration] Migration Summary:');
+    console.log(`[Migration]   Total EAs processed: ${totalEAs}`);
+    console.log(`[Migration]   Successfully migrated: ${migrated}`);
+    console.log(`[Migration]   Skipped: ${skipped}`);
+    console.log(`[Migration]   Already exists: ${alreadyExists}`);
+    console.log(`[Migration]   Errors: ${errors.length}`);
+    if (errors.length > 0) {
+      console.log('[Migration]   Error details:', errors);
+    }
+    console.log('[Migration] ========================================');
 
     return {
       message: 'Migration completed successfully',
@@ -568,6 +644,7 @@ export class EnumerationAreaService {
       migrated,
       skipped,
       alreadyExists,
+      errors,
     };
   }
 
