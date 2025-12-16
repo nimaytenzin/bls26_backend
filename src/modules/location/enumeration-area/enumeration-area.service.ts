@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { EnumerationArea } from './entities/enumeration-area.entity';
 import { CreateEnumerationAreaDto } from './dto/create-enumeration-area.dto';
 import { UpdateEnumerationAreaDto } from './dto/update-enumeration-area.dto';
@@ -18,6 +18,10 @@ export class EnumerationAreaService {
     private readonly enumerationAreaRepository: typeof EnumerationArea,
     @Inject('ENUMERATION_AREA_SUB_ADMINISTRATIVE_ZONE_REPOSITORY')
     private readonly junctionRepository: typeof EnumerationAreaSubAdministrativeZone,
+    @Inject('SUB_ADMINISTRATIVE_ZONE_REPOSITORY')
+    private readonly subAdministrativeZoneRepository: typeof SubAdministrativeZone,
+    @Inject('ADMINISTRATIVE_ZONE_REPOSITORY')
+    private readonly administrativeZoneRepository: typeof AdministrativeZone,
   ) {}
 
   async create(
@@ -628,6 +632,246 @@ export class EnumerationAreaService {
       alreadyExists,
       errors,
     };
+  }
+
+  /**
+   * Create two SAZs from GeoJSON files and a single EA that links to both
+   * Uses transaction for rollback on any failure
+   * @param saz1Data - SAZ1 form data (name, areaCode, type, administrativeZoneId)
+   * @param saz1Geometry - SAZ1 GeoJSON geometry
+   * @param saz2Data - SAZ2 form data (name, areaCode, type, administrativeZoneId)
+   * @param saz2Geometry - SAZ2 GeoJSON geometry
+   * @returns Created SAZs and EA
+   */
+  async createTwoSazsWithEa(
+    saz1Data: {
+      name: string;
+      areaCode: string;
+      type: 'chiwog' | 'lap';
+      administrativeZoneId: number;
+    },
+    saz1Geometry: any,
+    saz2Data: {
+      name: string;
+      areaCode: string;
+      type: 'chiwog' | 'lap';
+      administrativeZoneId: number;
+    },
+    saz2Geometry: any,
+  ): Promise<{
+    subAdministrativeZone1: SubAdministrativeZone;
+    subAdministrativeZone2: SubAdministrativeZone;
+    enumerationArea: EnumerationArea;
+  }> {
+    // Validate both SAZs have same administrativeZoneId
+    if (saz1Data.administrativeZoneId !== saz2Data.administrativeZoneId) {
+      throw new BadRequestException(
+        'Both SAZs must belong to the same Administrative Zone',
+      );
+    }
+
+    // Validate administrative zone exists
+    const adminZone = await this.administrativeZoneRepository.findByPk(
+      saz1Data.administrativeZoneId,
+    );
+    if (!adminZone) {
+      throw new NotFoundException(
+        `Administrative Zone with ID ${saz1Data.administrativeZoneId} not found`,
+      );
+    }
+
+    // Validate types
+    if (!['chiwog', 'lap'].includes(saz1Data.type.toLowerCase())) {
+      throw new BadRequestException('SAZ1 type must be "chiwog" or "lap"');
+    }
+    if (!['chiwog', 'lap'].includes(saz2Data.type.toLowerCase())) {
+      throw new BadRequestException('SAZ2 type must be "chiwog" or "lap"');
+    }
+
+    // Check if SAZ1 already exists (by areaCode + administrativeZoneId)
+    const existingSAZ1 = await this.subAdministrativeZoneRepository.findOne({
+      where: {
+        areaCode: saz1Data.areaCode,
+        administrativeZoneId: saz1Data.administrativeZoneId,
+      },
+    });
+    if (existingSAZ1) {
+      throw new BadRequestException(
+        `SAZ1 with areaCode "${saz1Data.areaCode}" already exists in Administrative Zone ${saz1Data.administrativeZoneId}`,
+      );
+    }
+
+    // Check if SAZ2 already exists (by areaCode + administrativeZoneId)
+    const existingSAZ2 = await this.subAdministrativeZoneRepository.findOne({
+      where: {
+        areaCode: saz2Data.areaCode,
+        administrativeZoneId: saz2Data.administrativeZoneId,
+      },
+    });
+    if (existingSAZ2) {
+      throw new BadRequestException(
+        `SAZ2 with areaCode "${saz2Data.areaCode}" already exists in Administrative Zone ${saz2Data.administrativeZoneId}`,
+      );
+    }
+
+    // Use transaction for rollback on any failure
+    const transaction = await this.enumerationAreaRepository.sequelize.transaction();
+
+    try {
+      // Convert GeoJSON geometries to PostGIS format
+      const saz1GeomString = JSON.stringify(saz1Geometry);
+      const saz2GeomString = JSON.stringify(saz2Geometry);
+      const saz1GeomValue = Sequelize.fn('ST_GeomFromGeoJSON', saz1GeomString);
+      const saz2GeomValue = Sequelize.fn('ST_GeomFromGeoJSON', saz2GeomString);
+
+      // Create SAZ1
+      const subAdministrativeZone1 =
+        await this.subAdministrativeZoneRepository.create(
+          {
+            administrativeZoneId: saz1Data.administrativeZoneId,
+            name: saz1Data.name,
+            areaCode: saz1Data.areaCode,
+            type: saz1Data.type.toLowerCase() as 'chiwog' | 'lap',
+            geom: saz1GeomValue,
+          },
+          { transaction },
+        );
+
+      // Create SAZ2
+      const subAdministrativeZone2 =
+        await this.subAdministrativeZoneRepository.create(
+          {
+            administrativeZoneId: saz2Data.administrativeZoneId,
+            name: saz2Data.name,
+            areaCode: saz2Data.areaCode,
+            type: saz2Data.type.toLowerCase() as 'chiwog' | 'lap',
+            geom: saz2GeomValue,
+          },
+          { transaction },
+        );
+
+      // Combine geometries using ST_Union
+      // Escape single quotes in GeoJSON strings for SQL
+      const escapedSaz1Geom = saz1GeomString.replace(/'/g, "''");
+      const escapedSaz2Geom = saz2GeomString.replace(/'/g, "''");
+
+      // Check if EA with areaCode "01" already exists for this SAZ combination
+      // Use junction table query to avoid subAdministrativeZoneId column issues
+      const existingEAs = await this.junctionRepository.findAll({
+        where: {
+          subAdministrativeZoneId: {
+            [Op.in]: [subAdministrativeZone1.id, subAdministrativeZone2.id],
+          },
+        },
+        attributes: ['enumerationAreaId'],
+        transaction,
+      });
+
+      if (existingEAs.length > 0) {
+        // Get unique EA IDs
+        const eaIds = [...new Set(existingEAs.map((j) => j.enumerationAreaId))];
+
+        // Check if any of these EAs have areaCode "01" and are linked to both SAZs
+        for (const eaId of eaIds) {
+          const ea = await this.enumerationAreaRepository.findOne({
+            where: {
+              id: eaId,
+              areaCode: '01',
+            },
+            attributes: { 
+              exclude: ['subAdministrativeZoneId'], // Explicitly exclude if column doesn't exist
+              include: ['id', 'areaCode'],
+            },
+            include: [
+              {
+                model: SubAdministrativeZone,
+                as: 'subAdministrativeZones',
+                attributes: ['id', 'areaCode'],
+                through: { attributes: [] },
+              },
+            ],
+            transaction,
+          });
+
+          if (ea) {
+            // Check if it has exactly these two SAZs
+            const linkedSAZIds = ea.subAdministrativeZones?.map((saz) => saz.id) || [];
+            const expectedIds = [subAdministrativeZone1.id, subAdministrativeZone2.id].sort();
+            const actualIds = linkedSAZIds.sort();
+
+            if (
+              expectedIds.length === actualIds.length &&
+              expectedIds.every((id, idx) => id === actualIds[idx])
+            ) {
+              await transaction.rollback();
+              throw new BadRequestException(
+                `EA with areaCode "01" already exists for SAZ combination (${subAdministrativeZone1.areaCode}, ${subAdministrativeZone2.areaCode})`,
+              );
+            }
+          }
+        }
+      }
+
+      // Combine geometries using ST_Union
+      const combinedGeometry = Sequelize.literal(
+        `ST_Union(
+          ST_GeomFromGeoJSON('${escapedSaz1Geom}'),
+          ST_GeomFromGeoJSON('${escapedSaz2Geom}')
+        )`,
+      );
+
+      // Create EA with combined geometry
+      // Use fields option to explicitly specify only the columns that exist
+      // subAdministrativeZoneId is nullable and won't be set
+      const enumerationArea = await this.enumerationAreaRepository.create(
+        {
+          name: 'EA1',
+          areaCode: '01',
+          description: `EA for ${saz1Data.name} and ${saz2Data.name}`,
+          geom: combinedGeometry,
+          // subAdministrativeZoneId is not set - will remain null
+        },
+        {
+          transaction,
+          fields: ['name', 'areaCode', 'description', 'geom'], // Only insert these fields
+        },
+      );
+
+      // Link EA to both SAZs via junction table
+      await this.junctionRepository.bulkCreate(
+        [
+          {
+            enumerationAreaId: enumerationArea.id,
+            subAdministrativeZoneId: subAdministrativeZone1.id,
+          },
+          {
+            enumerationAreaId: enumerationArea.id,
+            subAdministrativeZoneId: subAdministrativeZone2.id,
+          },
+        ],
+        { transaction },
+      );
+
+      // Commit transaction
+      await transaction.commit();
+
+      // Reload EA with SAZs
+      const eaWithSAZs = await this.findOne(
+        enumerationArea.id,
+        false,
+        true,
+      );
+
+      return {
+        subAdministrativeZone1,
+        subAdministrativeZone2,
+        enumerationArea: eaWithSAZs,
+      };
+    } catch (error) {
+      // Rollback transaction on any error
+      await transaction.rollback();
+      throw error;
+    }
   }
 
 }

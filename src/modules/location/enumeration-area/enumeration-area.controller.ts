@@ -12,10 +12,12 @@ import {
   Query,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   BadRequestException,
+  NotFoundException,
   ParseIntPipe,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { EnumerationAreaService } from './enumeration-area.service';
 import { CreateEnumerationAreaDto } from './dto/create-enumeration-area.dto';
 import { CreateEnumerationAreaGeoJsonDto } from './dto/create-enumeration-area-geojson.dto';
@@ -199,6 +201,192 @@ export class EnumerationAreaController {
   @Post('migrate-to-junction-table')
   async migrateToJunctionTable() {
     return this.enumerationAreaService.migrateToJunctionTable();
+  }
+
+  /**
+   * Create two SAZs from GeoJSON files and a single EA that links to both
+   * 
+   * @access Admin only
+   * @route POST /enumeration-area/create-two-sazs-with-ea
+   * @form multipart/form-data with fields:
+   *   - saz1File: GeoJSON file for SAZ1 (required)
+   *   - saz2File: GeoJSON file for SAZ2 (required)
+   *   - saz1Data: JSON string with { name, areaCode, type, administrativeZoneId }
+   *   - saz2Data: JSON string with { name, areaCode, type, administrativeZoneId }
+   * 
+   * @returns Object with created subAdministrativeZone1, subAdministrativeZone2, and enumerationArea
+   */
+  @Post('create-two-sazs-with-ea')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(
+    FilesInterceptor('files', 2, {
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit per file
+      fileFilter: (req, file, cb) => {
+        if (
+          file.mimetype === 'application/json' ||
+          file.mimetype === 'application/geo+json' ||
+          file.originalname.endsWith('.geojson') ||
+          file.originalname.endsWith('.json')
+        ) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              'Invalid file type. Only .json or .geojson files are allowed.',
+            ),
+            false,
+          );
+        }
+      },
+    }),
+  )
+  async createTwoSazsWithEa(
+    @UploadedFiles() files: any[],
+    @Body() body: {
+      saz1Data: string; // JSON string
+      saz2Data: string; // JSON string
+    },
+  ) {
+    if (!files || files.length !== 2) {
+      throw new BadRequestException('Exactly 2 GeoJSON files are required');
+    }
+
+    if (!body.saz1Data || !body.saz2Data) {
+      throw new BadRequestException(
+        'Both saz1Data and saz2Data are required',
+      );
+    }
+
+    try {
+      // Parse form data
+      const saz1Data = JSON.parse(body.saz1Data);
+      const saz2Data = JSON.parse(body.saz2Data);
+
+      // Validate required fields for SAZ1
+      if (
+        !saz1Data.name ||
+        !saz1Data.areaCode ||
+        !saz1Data.type ||
+        !saz1Data.administrativeZoneId
+      ) {
+        throw new BadRequestException(
+          'SAZ1 data missing required fields: name, areaCode, type, administrativeZoneId',
+        );
+      }
+
+      // Validate required fields for SAZ2
+      if (
+        !saz2Data.name ||
+        !saz2Data.areaCode ||
+        !saz2Data.type ||
+        !saz2Data.administrativeZoneId
+      ) {
+        throw new BadRequestException(
+          'SAZ2 data missing required fields: name, areaCode, type, administrativeZoneId',
+        );
+      }
+
+      // Parse GeoJSON files
+      const saz1GeoJson = JSON.parse(files[0].buffer.toString('utf-8'));
+      const saz2GeoJson = JSON.parse(files[1].buffer.toString('utf-8'));
+
+      // Extract geometry from GeoJSON
+      let saz1Geometry;
+      let saz2Geometry;
+
+      // Handle SAZ1 geometry
+      if (saz1GeoJson.type === 'Feature' && saz1GeoJson.geometry) {
+        saz1Geometry = saz1GeoJson.geometry;
+      } else if (
+        saz1GeoJson.type === 'FeatureCollection' &&
+        saz1GeoJson.features &&
+        saz1GeoJson.features.length > 0
+      ) {
+        saz1Geometry = saz1GeoJson.features[0].geometry;
+      } else if (
+        saz1GeoJson.type &&
+        [
+          'Point',
+          'LineString',
+          'Polygon',
+          'MultiPoint',
+          'MultiLineString',
+          'MultiPolygon',
+          'GeometryCollection',
+        ].includes(saz1GeoJson.type)
+      ) {
+        saz1Geometry = saz1GeoJson;
+      } else {
+        throw new BadRequestException(
+          'SAZ1 GeoJSON: Invalid format. Must be a Feature, FeatureCollection, or Geometry object.',
+        );
+      }
+
+      // Handle SAZ2 geometry
+      if (saz2GeoJson.type === 'Feature' && saz2GeoJson.geometry) {
+        saz2Geometry = saz2GeoJson.geometry;
+      } else if (
+        saz2GeoJson.type === 'FeatureCollection' &&
+        saz2GeoJson.features &&
+        saz2GeoJson.features.length > 0
+      ) {
+        saz2Geometry = saz2GeoJson.features[0].geometry;
+      } else if (
+        saz2GeoJson.type &&
+        [
+          'Point',
+          'LineString',
+          'Polygon',
+          'MultiPoint',
+          'MultiLineString',
+          'MultiPolygon',
+          'GeometryCollection',
+        ].includes(saz2GeoJson.type)
+      ) {
+        saz2Geometry = saz2GeoJson;
+      } else {
+        throw new BadRequestException(
+          'SAZ2 GeoJSON: Invalid format. Must be a Feature, FeatureCollection, or Geometry object.',
+        );
+      }
+
+      if (!saz1Geometry || !saz2Geometry) {
+        throw new BadRequestException(
+          'No geometry found in one or both GeoJSON files.',
+        );
+      }
+
+      // Call service method
+      const result = await this.enumerationAreaService.createTwoSazsWithEa(
+        {
+          name: saz1Data.name,
+          areaCode: saz1Data.areaCode,
+          type: saz1Data.type.toLowerCase() as 'chiwog' | 'lap',
+          administrativeZoneId: parseInt(saz1Data.administrativeZoneId, 10),
+        },
+        saz1Geometry,
+        {
+          name: saz2Data.name,
+          areaCode: saz2Data.areaCode,
+          type: saz2Data.type.toLowerCase() as 'chiwog' | 'lap',
+          administrativeZoneId: parseInt(saz2Data.administrativeZoneId, 10),
+        },
+        saz2Geometry,
+      );
+
+      return result;
+    } catch (error) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to process request: ${error.message}`,
+      );
+    }
   }
 
   @Post('upload-geojson/:enumerationAreaId')
