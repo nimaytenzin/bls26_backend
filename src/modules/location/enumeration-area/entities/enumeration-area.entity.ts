@@ -5,6 +5,8 @@ import {
   Table,
   HasMany,
   BelongsToMany,
+  ForeignKey,
+  BelongsTo,
 } from 'sequelize-typescript';
 import { SubAdministrativeZone } from '../../sub-administrative-zone/entities/sub-administrative-zone.entity';
 import { Survey } from '../../../survey/survey/entities/survey.entity';
@@ -40,11 +42,21 @@ export class EnumerationArea extends Model {
   })
   areaCode: string;
 
+  @ForeignKey(() => SubAdministrativeZone)
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: true,
+  })
+  subAdministrativeZoneId: number;
+
   @Column({
     type: DataType.GEOMETRY('MULTIPOLYGON', 4326),
     allowNull: true,
   })
   geom: string;
+
+  @BelongsTo(() => SubAdministrativeZone)
+  subAdministrativeZone: SubAdministrativeZone;
 
   @BelongsToMany(
     () => SubAdministrativeZone,

@@ -510,4 +510,72 @@ export class EnumerationAreaService {
     });
   }
 
+  /**
+   * Migrate existing subAdministrativeZoneId relationships to junction table
+   * This method is idempotent - safe to run multiple times
+   * @returns Migration statistics
+   */
+  async migrateToJunctionTable(): Promise<{
+    message: string;
+    totalEAs: number;
+    migrated: number;
+    skipped: number;
+    alreadyExists: number;
+  }> {
+    // Find all EAs with non-null subAdministrativeZoneId
+    const easWithOldId = await this.enumerationAreaRepository.findAll({
+      where: {
+        subAdministrativeZoneId: {
+          [Op.ne]: null,
+        },
+      },
+      attributes: ['id', 'subAdministrativeZoneId'],
+    });
+
+    const totalEAs = easWithOldId.length;
+    let migrated = 0;
+    let skipped = 0;
+    let alreadyExists = 0;
+
+    for (const ea of easWithOldId) {
+      if (!ea.subAdministrativeZoneId) {
+        skipped++;
+        continue;
+      }
+
+      // Check if junction table entry already exists
+      const existingJunction = await this.junctionRepository.findOne({
+        where: {
+          enumerationAreaId: ea.id,
+          subAdministrativeZoneId: ea.subAdministrativeZoneId,
+        },
+      });
+
+      if (existingJunction) {
+        alreadyExists++;
+        continue;
+      }
+
+      // Create junction table entry
+      try {
+        await this.junctionRepository.create({
+          enumerationAreaId: ea.id,
+          subAdministrativeZoneId: ea.subAdministrativeZoneId,
+        });
+        migrated++;
+      } catch (error) {
+        // If creation fails (e.g., duplicate key), count as already exists
+        alreadyExists++;
+      }
+    }
+
+    return {
+      message: 'Migration completed successfully',
+      totalEAs,
+      migrated,
+      skipped,
+      alreadyExists,
+    };
+  }
+
 }

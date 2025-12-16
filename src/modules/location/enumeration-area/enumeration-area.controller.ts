@@ -185,6 +185,19 @@ export class EnumerationAreaController {
     }
   }
 
+  /**
+   * Migrate existing subAdministrativeZoneId relationships to junction table
+   * This endpoint is idempotent - safe to run multiple times
+   * @access Admin only
+   * @returns Migration statistics
+   */
+  @Post('migrate-to-junction-table')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async migrateToJunctionTable() {
+    return this.enumerationAreaService.migrateToJunctionTable();
+  }
+
   @Post('upload-geojson/:enumerationAreaId')
   @UseInterceptors(
     FileInterceptor('file', {
