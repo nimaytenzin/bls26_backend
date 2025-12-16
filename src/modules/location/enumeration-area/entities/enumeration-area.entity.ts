@@ -42,7 +42,7 @@ export class EnumerationArea extends Model {
   })
   areaCode: string;
 
-  @ForeignKey(() => SubAdministrativeZone)
+  
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
@@ -55,8 +55,7 @@ export class EnumerationArea extends Model {
   })
   geom: string;
 
-  @BelongsTo(() => SubAdministrativeZone)
-  subAdministrativeZone: SubAdministrativeZone;
+
 
   @BelongsToMany(
     () => SubAdministrativeZone,
