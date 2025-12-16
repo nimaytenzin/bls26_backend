@@ -9,6 +9,7 @@ import { AdministrativeZone } from '../administrative-zone/entities/administrati
 import { Dzongkhag } from '../dzongkhag/entities/dzongkhag.entity';
 import { EnumerationArea } from '../enumeration-area/entities/enumeration-area.entity';
 import { EnumerationAreaSubAdministrativeZone } from '../enumeration-area/entities/enumeration-area-sub-administrative-zone.entity';
+import { SAZAnnualStats } from '../../annual statistics/sub-administrative-zone-annual-statistics/entities/saz-annual-stats.entity';
 
 @Injectable()
 export class SubAdministrativeZoneService {
@@ -21,6 +22,8 @@ export class SubAdministrativeZoneService {
     private readonly administrativeZoneRepository: typeof AdministrativeZone,
     @Inject('ENUMERATION_AREA_SUB_ADMINISTRATIVE_ZONE_REPOSITORY')
     private readonly junctionRepository: typeof EnumerationAreaSubAdministrativeZone,
+    @Inject('SAZ_ANNUAL_STATS_REPOSITORY')
+    private readonly sazAnnualStatsRepository: typeof SAZAnnualStats,
   ) {}
 
   async create(
@@ -419,9 +422,37 @@ export class SubAdministrativeZoneService {
   }
 
   async remove(id: number): Promise<number> {
-    return await this.subAdministrativeZoneRepository.destroy({
-      where: { id },
-    });
+    // Use transaction to ensure all deletions succeed or rollback
+    const transaction = await this.subAdministrativeZoneRepository.sequelize.transaction();
+
+    try {
+      // 1. Delete junction table entries (EA-SAZ relationships)
+      await this.junctionRepository.destroy({
+        where: { subAdministrativeZoneId: id },
+        transaction,
+      });
+
+      // 2. Delete SAZ annual statistics
+      await this.sazAnnualStatsRepository.destroy({
+        where: { subAdministrativeZoneId: id },
+        transaction,
+      });
+
+      // 3. Delete the Sub-Administrative Zone itself
+      const deletedCount = await this.subAdministrativeZoneRepository.destroy({
+        where: { id },
+        transaction,
+      });
+
+      // Commit transaction if all deletions succeeded
+      await transaction.commit();
+
+      return deletedCount;
+    } catch (error) {
+      // Rollback transaction on any error
+      await transaction.rollback();
+      throw error;
+    }
   }
 
   /**

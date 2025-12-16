@@ -5,6 +5,7 @@ import { SubAdministrativeZone } from './entities/sub-administrative-zone.entity
 import { EnumerationArea } from '../enumeration-area/entities/enumeration-area.entity';
 import { AdministrativeZone } from '../administrative-zone/entities/administrative-zone.entity';
 import { EnumerationAreaSubAdministrativeZone } from '../enumeration-area/entities/enumeration-area-sub-administrative-zone.entity';
+import { SAZAnnualStats } from '../../annual statistics/sub-administrative-zone-annual-statistics/entities/saz-annual-stats.entity';
 
 @Module({
   controllers: [SubAdministrativeZoneController],
@@ -25,6 +26,10 @@ import { EnumerationAreaSubAdministrativeZone } from '../enumeration-area/entiti
     {
       provide: 'ENUMERATION_AREA_SUB_ADMINISTRATIVE_ZONE_REPOSITORY',
       useValue: EnumerationAreaSubAdministrativeZone,
+    },
+    {
+      provide: 'SAZ_ANNUAL_STATS_REPOSITORY',
+      useValue: SAZAnnualStats,
     },
   ],
   exports: [SubAdministrativeZoneService],
