@@ -523,14 +523,7 @@ export class EnumerationAreaService {
     alreadyExists: number;
   }> {
     // Find all EAs with non-null subAdministrativeZoneId
-    const easWithOldId = await this.enumerationAreaRepository.findAll({
-      where: {
-        subAdministrativeZoneId: {
-          [Op.ne]: null,
-        },
-      },
-      attributes: ['id', 'subAdministrativeZoneId'],
-    });
+    const easWithOldId = await this.enumerationAreaRepository.findAll();
 
     const totalEAs = easWithOldId.length;
     let migrated = 0;
