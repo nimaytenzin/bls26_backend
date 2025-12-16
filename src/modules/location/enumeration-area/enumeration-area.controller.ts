@@ -197,8 +197,7 @@ export class EnumerationAreaController {
    * @returns Migration statistics
    */
   @Post('migrate-to-junction-table')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+
   async migrateToJunctionTable() {
     return this.enumerationAreaService.migrateToJunctionTable();
   }
