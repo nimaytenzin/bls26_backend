@@ -13,6 +13,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { EnumerationAreaService } from './enumeration-area.service';
@@ -55,8 +56,12 @@ export class EnumerationAreaController {
     const includeSubAdmin = includeSubAdminZone === 'true';
 
     if (subAdministrativeZoneId) {
+      const sazId = parseInt(subAdministrativeZoneId, 10);
+      if (isNaN(sazId)) {
+        throw new BadRequestException('Invalid subAdministrativeZoneId parameter');
+      }
       return this.enumerationAreaService.findBySubAdministrativeZone(
-        +subAdministrativeZoneId,
+        sazId,
         includeGeom,
         includeSubAdmin,
       );
@@ -81,8 +86,8 @@ export class EnumerationAreaController {
    * @returns GeoJSON Feature
    */
   @Get('geojson/:id')
-  async findOneAsGeoJson(@Param('id') id: string) {
-    return this.enumerationAreaService.findOneAsGeoJson(+id);
+  async findOneAsGeoJson(@Param('id', ParseIntPipe) id: number) {
+    return this.enumerationAreaService.findOneAsGeoJson(id);
   }
 
   /**
@@ -99,7 +104,7 @@ export class EnumerationAreaController {
    */
   @Get(':id')
   async findOne(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Query('withGeom') withGeom?: string,
     @Query('includeSubAdminZone') includeSubAdminZone?: string,
   ) {
@@ -107,7 +112,7 @@ export class EnumerationAreaController {
     const includeSubAdmin = includeSubAdminZone === 'true';
 
     return this.enumerationAreaService.findOne(
-      +id,
+      id,
       includeGeom,
       includeSubAdmin,
     );
@@ -222,7 +227,7 @@ export class EnumerationAreaController {
     }),
   )
   async uploadGeoJsonFile(
-    @Param('enumerationAreaId') enumerationAreaId: string,
+    @Param('enumerationAreaId', ParseIntPipe) enumerationAreaId: number,
     @UploadedFile() file: any,
   ) {
     if (!file) {
@@ -273,7 +278,7 @@ export class EnumerationAreaController {
       }
 
       const result = await this.enumerationAreaService.updateGeometry(
-        +enumerationAreaId,
+        enumerationAreaId,
         geometry,
       );
       return result;
@@ -286,19 +291,19 @@ export class EnumerationAreaController {
 
   @Get('by-sub-administrative-zone/:subAdministrativeZoneId')
   async findBySubAdministrativeZone(
-    @Param('subAdministrativeZoneId') subAdministrativeZoneId: string,
+    @Param('subAdministrativeZoneId', ParseIntPipe) subAdministrativeZoneId: number,
   ) {
     return this.enumerationAreaService.findBySubAdministrativeZone(
-      +subAdministrativeZoneId,
+      subAdministrativeZoneId,
     );
   }
 
   @Get('geojson/by-sub-administrative-zone/:subAdministrativeZoneId')
   async findAllAsGeoJsonBySubAdministrativeZone(
-    @Param('subAdministrativeZoneId') subAdministrativeZoneId: string,
+    @Param('subAdministrativeZoneId', ParseIntPipe) subAdministrativeZoneId: number,
   ) {
     return this.enumerationAreaService.findAllAsGeoJsonBySubAdministrativeZone(
-      +subAdministrativeZoneId,
+      subAdministrativeZoneId,
     );
   }
 
@@ -316,7 +321,7 @@ export class EnumerationAreaController {
    */
   @Get('by-administrative-zone/:administrativeZoneId')
   async findByAdministrativeZone(
-    @Param('administrativeZoneId') administrativeZoneId: string,
+    @Param('administrativeZoneId', ParseIntPipe) administrativeZoneId: number,
     @Query('withGeom') withGeom?: string,
     @Query('includeSubAdminZone') includeSubAdminZone?: string,
   ) {
@@ -324,7 +329,7 @@ export class EnumerationAreaController {
     const includeSubAdmin = includeSubAdminZone === 'true';
 
     return this.enumerationAreaService.findByAdministrativeZone(
-      +administrativeZoneId,
+      administrativeZoneId,
       includeGeom,
       includeSubAdmin,
     );
@@ -338,10 +343,10 @@ export class EnumerationAreaController {
    */
   @Get('geojson/by-administrative-zone/:administrativeZoneId')
   async findAllAsGeoJsonByAdministrativeZone(
-    @Param('administrativeZoneId') administrativeZoneId: string,
+    @Param('administrativeZoneId', ParseIntPipe) administrativeZoneId: number,
   ) {
     return this.enumerationAreaService.findAllAsGeoJsonByAdministrativeZone(
-      +administrativeZoneId,
+      administrativeZoneId,
     );
   }
 
@@ -349,18 +354,18 @@ export class EnumerationAreaController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   async update(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() updateEnumerationAreaDto: UpdateEnumerationAreaDto,
   ) {
-    return this.enumerationAreaService.update(+id, updateEnumerationAreaDto);
+    return this.enumerationAreaService.update(id, updateEnumerationAreaDto);
   }
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('id') id: string) {
-    return this.enumerationAreaService.remove(+id);
+  async remove(@Param('id', ParseIntPipe) id: number) {
+    return this.enumerationAreaService.remove(id);
   }
 
 }
