@@ -1110,7 +1110,7 @@ export class EnumerationAreaService {
         );
       }
 
-      // Validate new areaCode is unique
+      // Validate new areaCode is unique (allow reusing area code from source EAs)
       const existingEa = await this.enumerationAreaRepository.findOne({
         where: {
           areaCode: mergedEaData.areaCode,
@@ -1119,9 +1119,16 @@ export class EnumerationAreaService {
       });
 
       if (existingEa) {
-        throw new BadRequestException(
-          `Area code "${mergedEaData.areaCode}" already exists`,
-        );
+        // Check if the existing EA with this area code is one of the source EAs being merged
+        const isSourceEa = sourceEaIds.includes(existingEa.id);
+        
+        if (!isSourceEa) {
+          // Area code exists but doesn't belong to any source EA - not allowed
+          throw new BadRequestException(
+            `Area code "${mergedEaData.areaCode}" already exists`,
+          );
+        }
+        // If it's a source EA, it's allowed - it will be deactivated below
       }
 
       // Mark all source EAs as inactive
