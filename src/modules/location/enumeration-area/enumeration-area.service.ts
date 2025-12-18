@@ -1111,25 +1111,29 @@ export class EnumerationAreaService {
       }
 
       // Validate new areaCode is unique (allow reusing area code from source EAs)
-      const existingEa = await this.enumerationAreaRepository.findOne({
-        where: {
-          areaCode: mergedEaData.areaCode,
-        },
-        transaction,
-      });
+      // First check if any of the source EAs already have this area code
+      const sourceEaWithSameCode = sourceEAs.find(
+        (ea) => ea.areaCode === mergedEaData.areaCode,
+      );
 
-      if (existingEa) {
-        // Check if the existing EA with this area code is one of the source EAs being merged
-        const isSourceEa = sourceEaIds.includes(existingEa.id);
-        
-        if (!isSourceEa) {
-          // Area code exists but doesn't belong to any source EA - not allowed
+      if (!sourceEaWithSameCode) {
+        // If none of the source EAs have this code, check if it exists elsewhere
+        const existingEa = await this.enumerationAreaRepository.findOne({
+          where: {
+            areaCode: mergedEaData.areaCode,
+            isActive: true, // Only check active EAs
+          },
+          transaction,
+        });
+
+        if (existingEa) {
+          // Area code exists on a different active EA - not allowed
           throw new BadRequestException(
-            `Area code "${mergedEaData.areaCode}" already exists`,
+            `Area code "${mergedEaData.areaCode}" already exists on an active enumeration area`,
           );
         }
-        // If it's a source EA, it's allowed - it will be deactivated below
       }
+      // If a source EA has this area code, it's allowed - it will be deactivated below
 
       // Mark all source EAs as inactive
       await this.enumerationAreaRepository.update(
