@@ -34,6 +34,24 @@ export class GeographicStatisticalCodeService {
       true, // include EAs
     );
 
+    // Sort dzongkhags by area code (ascending)
+    dzongkhags.sort((a, b) => a.areaCode.localeCompare(b.areaCode));
+
+    // Sort administrative zones and sub-administrative zones within each dzongkhag
+    for (const dzongkhag of dzongkhags) {
+      if (dzongkhag.administrativeZones) {
+        // Sort administrative zones by area code (ascending)
+        dzongkhag.administrativeZones.sort((a, b) => a.areaCode.localeCompare(b.areaCode));
+        
+        // Sort sub-administrative zones within each administrative zone by area code (ascending)
+        for (const adminZone of dzongkhag.administrativeZones) {
+          if (adminZone.subAdministrativeZones) {
+            adminZone.subAdministrativeZones.sort((a, b) => a.areaCode.localeCompare(b.areaCode));
+          }
+        }
+      }
+    }
+
     const dzongkhagReportData: DzongkhagReportData[] = [];
     let totalEAs = 0;
     let totalUrbanEAs = 0;
@@ -118,9 +136,32 @@ export class GeographicStatisticalCodeService {
       }
     }
 
-    // Sort EAs by areaCode
-    urbanEAs.sort((a, b) => a.eaCode.localeCompare(b.eaCode));
-    ruralEAs.sort((a, b) => a.eaCode.localeCompare(b.eaCode));
+    // Sort EAs by full hierarchy: Administrative Zone code -> Sub-Administrative Zone code -> EA code
+    urbanEAs.sort((a, b) => {
+      // First compare by Administrative Zone code
+      const adminZoneCompare = a.administrativeZone.code.localeCompare(b.administrativeZone.code);
+      if (adminZoneCompare !== 0) return adminZoneCompare;
+      
+      // Then compare by Sub-Administrative Zone code
+      const subAdminZoneCompare = a.subAdministrativeZone.code.localeCompare(b.subAdministrativeZone.code);
+      if (subAdminZoneCompare !== 0) return subAdminZoneCompare;
+      
+      // Finally compare by EA code
+      return a.eaCode.localeCompare(b.eaCode);
+    });
+    
+    ruralEAs.sort((a, b) => {
+      // First compare by Administrative Zone code
+      const adminZoneCompare = a.administrativeZone.code.localeCompare(b.administrativeZone.code);
+      if (adminZoneCompare !== 0) return adminZoneCompare;
+      
+      // Then compare by Sub-Administrative Zone code
+      const subAdminZoneCompare = a.subAdministrativeZone.code.localeCompare(b.subAdministrativeZone.code);
+      if (subAdminZoneCompare !== 0) return subAdminZoneCompare;
+      
+      // Finally compare by EA code
+      return a.eaCode.localeCompare(b.eaCode);
+    });
 
     // Calculate summary
     const summary = await this.calculateDzongkhagSummary(dzongkhag.id, urbanEAs.length, ruralEAs.length);
