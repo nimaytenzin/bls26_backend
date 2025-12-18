@@ -22,10 +22,15 @@ import { EnumerationAreaService } from './enumeration-area.service';
 import { CreateEnumerationAreaDto } from './dto/create-enumeration-area.dto';
 import { CreateEnumerationAreaGeoJsonDto } from './dto/create-enumeration-area-geojson.dto';
 import { UpdateEnumerationAreaDto } from './dto/update-enumeration-area.dto';
+import { SplitEnumerationAreaDto } from './dto/split-enumeration-area.dto';
+import { MergeEnumerationAreasDto } from './dto/merge-enumeration-areas.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { UserRole } from '../../auth/entities/user.entity';
+import {
+  PaginationQueryDto,
+} from '../../../common/utils/pagination.util';
 
 @Controller('enumeration-area')
 export class EnumerationAreaController {
@@ -552,6 +557,385 @@ export class EnumerationAreaController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('id', ParseIntPipe) id: number) {
     return this.enumerationAreaService.remove(id);
+  }
+
+  /**
+   * Split an enumeration area into multiple new EAs
+   * @access Admin only
+   * @param id - Source Enumeration Area ID
+   * @form multipart/form-data with fields:
+   *   - eaData: JSON string with { newEas: [{name, areaCode, description, subAdministrativeZoneIds}], reason? }
+   *   - files: GeoJSON files (one per new EA, in same order as newEas array)
+   */
+  @Post(':id/split')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit per file
+      fileFilter: (req, file, cb) => {
+        if (
+          file.mimetype === 'application/json' ||
+          file.mimetype === 'application/geo+json' ||
+          file.originalname.endsWith('.geojson') ||
+          file.originalname.endsWith('.json')
+        ) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              'Invalid file type. Only .json or .geojson files are allowed.',
+            ),
+            false,
+          );
+        }
+      },
+    }),
+  )
+  async split(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFiles() files: any[],
+    @Body() body: { eaData: string; reason?: string },
+  ) {
+    if (!body.eaData) {
+      throw new BadRequestException('eaData is required');
+    }
+
+    if (!files || files.length === 0) {
+      throw new BadRequestException('At least one GeoJSON file is required');
+    }
+
+    try {
+      // Parse form data
+      const eaData = JSON.parse(body.eaData);
+
+      if (!eaData.newEas || !Array.isArray(eaData.newEas)) {
+        throw new BadRequestException(
+          'eaData.newEas is required and must be an array',
+        );
+      }
+
+      if (eaData.newEas.length < 2) {
+        throw new BadRequestException(
+          'At least 2 new EAs are required for a split',
+        );
+      }
+
+      if (files.length !== eaData.newEas.length) {
+        throw new BadRequestException(
+          `Number of GeoJSON files (${files.length}) must match number of new EAs (${eaData.newEas.length})`,
+        );
+      }
+
+      // Parse GeoJSON files and attach geometry to each EA
+      const newEasWithGeometry = eaData.newEas.map((ea: any, index: number) => {
+        const geoJsonFile = files[index];
+        let geometry;
+
+        try {
+          const geoJsonData = JSON.parse(geoJsonFile.buffer.toString('utf-8'));
+
+          // Extract geometry from GeoJSON
+          if (geoJsonData.type === 'Feature' && geoJsonData.geometry) {
+            geometry = geoJsonData.geometry;
+          } else if (
+            geoJsonData.type === 'FeatureCollection' &&
+            geoJsonData.features &&
+            geoJsonData.features.length > 0
+          ) {
+            geometry = geoJsonData.features[0].geometry;
+          } else if (
+            geoJsonData.type &&
+            [
+              'Point',
+              'LineString',
+              'Polygon',
+              'MultiPoint',
+              'MultiLineString',
+              'MultiPolygon',
+              'GeometryCollection',
+            ].includes(geoJsonData.type)
+          ) {
+            geometry = geoJsonData;
+          } else {
+            throw new BadRequestException(
+              `Invalid GeoJSON format in file ${index + 1}. Must be a Feature, FeatureCollection, or Geometry object.`,
+            );
+          }
+        } catch (error) {
+          throw new BadRequestException(
+            `Failed to parse GeoJSON file ${index + 1}: ${error.message}`,
+          );
+        }
+
+        return {
+          ...ea,
+          geom: JSON.stringify(geometry),
+        };
+      });
+
+      return this.enumerationAreaService.splitEnumerationArea(
+        id,
+        newEasWithGeometry,
+        body.reason || eaData.reason,
+      );
+    } catch (error) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to process split request: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Merge multiple enumeration areas into one new EA
+   * @access Admin only
+   * @form multipart/form-data with fields:
+   *   - mergeData: JSON string with { sourceEaIds: [number[]], mergedEa: {name, areaCode, description, subAdministrativeZoneIds}, reason? }
+   *   - file: Single GeoJSON file for the merged EA
+   */
+  @Post('merge')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+      fileFilter: (req, file, cb) => {
+        if (
+          file.mimetype === 'application/json' ||
+          file.mimetype === 'application/geo+json' ||
+          file.originalname.endsWith('.geojson') ||
+          file.originalname.endsWith('.json')
+        ) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              'Invalid file type. Only .json or .geojson files are allowed.',
+            ),
+            false,
+          );
+        }
+      },
+    }),
+  )
+  async merge(
+    @UploadedFile() file: any,
+    @Body() body: { mergeData: string; reason?: string },
+  ) {
+    if (!body.mergeData) {
+      throw new BadRequestException('mergeData is required');
+    }
+
+    if (!file) {
+      throw new BadRequestException('GeoJSON file is required');
+    }
+
+    try {
+      // Parse form data
+      const mergeData = JSON.parse(body.mergeData);
+
+      if (!mergeData.sourceEaIds || !Array.isArray(mergeData.sourceEaIds)) {
+        throw new BadRequestException(
+          'mergeData.sourceEaIds is required and must be an array',
+        );
+      }
+
+      if (mergeData.sourceEaIds.length < 2) {
+        throw new BadRequestException(
+          'At least 2 source EAs are required for a merge',
+        );
+      }
+
+      if (!mergeData.mergedEa) {
+        throw new BadRequestException('mergeData.mergedEa is required');
+      }
+
+      // Parse GeoJSON file
+      let geometry;
+      try {
+        const geoJsonData = JSON.parse(file.buffer.toString('utf-8'));
+
+        // Extract geometry from GeoJSON
+        if (geoJsonData.type === 'Feature' && geoJsonData.geometry) {
+          geometry = geoJsonData.geometry;
+        } else if (
+          geoJsonData.type === 'FeatureCollection' &&
+          geoJsonData.features &&
+          geoJsonData.features.length > 0
+        ) {
+          geometry = geoJsonData.features[0].geometry;
+        } else if (
+          geoJsonData.type &&
+          [
+            'Point',
+            'LineString',
+            'Polygon',
+            'MultiPoint',
+            'MultiLineString',
+            'MultiPolygon',
+            'GeometryCollection',
+          ].includes(geoJsonData.type)
+        ) {
+          geometry = geoJsonData;
+        } else {
+          throw new BadRequestException(
+            'Invalid GeoJSON format. Must be a Feature, FeatureCollection, or Geometry object.',
+          );
+        }
+      } catch (error) {
+        throw new BadRequestException(
+          `Failed to parse GeoJSON file: ${error.message}`,
+        );
+      }
+
+      const mergedEaWithGeometry = {
+        ...mergeData.mergedEa,
+        geom: JSON.stringify(geometry),
+      };
+
+      return this.enumerationAreaService.mergeEnumerationAreas(
+        mergeData.sourceEaIds,
+        mergedEaWithGeometry,
+        body.reason || mergeData.reason,
+      );
+    } catch (error) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to process merge request: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Get EA lineage (ancestors and/or descendants)
+   * @access Public
+   * @param id - Enumeration Area ID
+   * @query direction - 'ancestors', 'descendants', or 'both' (default: 'both')
+   */
+  @Get(':id/lineage')
+  async getLineage(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('direction') direction?: 'ancestors' | 'descendants' | 'both',
+  ) {
+    return this.enumerationAreaService.getEaLineage(
+      id,
+      direction || 'both',
+    );
+  }
+
+  /**
+   * Get complete EA history tree (both ancestors and descendants)
+   * @access Public
+   * @param id - Enumeration Area ID
+   */
+  @Get(':id/history')
+  async getHistory(@Param('id', ParseIntPipe) id: number) {
+    return this.enumerationAreaService.getEaHistory(id);
+  }
+
+  /**
+   * Get all inactive enumeration areas
+   * @access Public
+   * @query withGeom - Include geometry (default: false)
+   * @query includeSubAdminZone - Include sub-administrative zones (default: false)
+   */
+  @Get('inactive')
+  async findAllInactive(
+    @Query('withGeom') withGeom?: string,
+    @Query('includeSubAdminZone') includeSubAdminZone?: string,
+  ) {
+    const includeGeom = withGeom === 'true';
+    const includeSubAdmin = includeSubAdminZone === 'true';
+    return this.enumerationAreaService.findAllInactive(
+      includeGeom,
+      includeSubAdmin,
+    );
+  }
+
+  /**
+   * Get all active enumeration areas (default behavior)
+   * @access Public
+   * @query withGeom - Include geometry (default: false)
+   * @query includeSubAdminZone - Include sub-administrative zones (default: false)
+   */
+  @Get('active')
+  async findAllActive(
+    @Query('withGeom') withGeom?: string,
+    @Query('includeSubAdminZone') includeSubAdminZone?: string,
+  ) {
+    const includeGeom = withGeom === 'true';
+    const includeSubAdmin = includeSubAdminZone === 'true';
+    return this.enumerationAreaService.findAllActive(
+      includeGeom,
+      includeSubAdmin,
+    );
+  }
+
+  /**
+   * Get all enumeration areas that were split, ordered by latest, paginated
+   * @access Public
+   * @query page - Page number (default: 1)
+   * @query limit - Items per page (default: 10, max: 100)
+   * @query sortBy - Field to sort by (default: operationDate)
+   * @query sortOrder - Sort order: ASC or DESC (default: DESC)
+   *
+   * @example
+   * GET /enumeration-area/split/paginated/all
+   * GET /enumeration-area/split/paginated/all?page=1&limit=20
+   */
+  @Get('split/paginated/all')
+  async findAllSplit(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'ASC' | 'DESC',
+  ) {
+    const query: PaginationQueryDto = {
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      sortBy,
+      sortOrder,
+    };
+    return this.enumerationAreaService.findAllSplitPaginated(query);
+  }
+
+  /**
+   * Get all enumeration areas that were merged, ordered by latest, paginated
+   * @access Public
+   * @query page - Page number (default: 1)
+   * @query limit - Items per page (default: 10, max: 100)
+   * @query sortBy - Field to sort by (default: operationDate)
+   * @query sortOrder - Sort order: ASC or DESC (default: DESC)
+   *
+   * @example
+   * GET /enumeration-area/merge/paginated/all
+   * GET /enumeration-area/merge/paginated/all?page=1&limit=20
+   */
+  @Get('merge/paginated/all')
+  async findAllMerged(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'ASC' | 'DESC',
+  ) {
+    const query: PaginationQueryDto = {
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      sortBy,
+      sortOrder,
+    };
+    return this.enumerationAreaService.findAllMergedPaginated(query);
   }
 
 }

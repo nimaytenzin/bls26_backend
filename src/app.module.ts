@@ -23,6 +23,7 @@ import { SamplingModule } from './modules/sampling/sampling.module';
 import { LocationDownloadModule } from './modules/location/location-download/location-download.module';
 import { PublicApiModule } from './modules/public-api/public-api.module';
 import { EnumerationAreaSubAdministrativeZone } from './modules/location/enumeration-area/entities/enumeration-area-sub-administrative-zone.entity';
+import { EnumerationAreaLineage } from './modules/location/enumeration-area/entities/enumeration-area-lineage.entity';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { EnumerationAreaSubAdministrativeZone } from './modules/location/enumera
     AdministrativeZoneModule,
     SubAdministrativeZoneModule,
     EnumerationAreaModule,
+    
     BuildingsModule,
     SurveyModule,
     ReportsModule,

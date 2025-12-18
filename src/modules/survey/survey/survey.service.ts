@@ -375,7 +375,9 @@ export class SurveyService {
 
     // Step 2: Get all enumeration areas that belong to these dzongkhags via junction table
     // EA → SubAdminZone (via junction) → AdminZone → Dzongkhag
+    // Only get active EAs (not survey-linked, so filter by isActive)
     const enumerationAreas = await EnumerationArea.findAll({
+      where: { isActive: true },
       include: [
         {
           model: SubAdministrativeZone,
@@ -955,9 +957,9 @@ export class SurveyService {
     ];
     const surveyIds = [...new Set(dto.items.map((item) => item.surveyId))];
 
-    // Validate enumeration areas exist
+    // Validate enumeration areas exist (only active EAs for bulk upload)
     const enumerationAreas = await EnumerationArea.findAll({
-      where: { id: enumerationAreaIds },
+      where: { id: enumerationAreaIds, isActive: true },
       attributes: ['id'],
     });
     const validEAIds = new Set(enumerationAreas.map((ea) => ea.id));
@@ -1266,9 +1268,11 @@ export class SurveyService {
     if (!saz) return null;
 
     // Find EA by areaCode and check if it's linked to this SAZ via junction table
+    // Only get active EAs (not survey-linked, so filter by isActive)
     const ea = await EnumerationArea.findOne({
       where: {
         areaCode: { [Op.or]: this.codeVariants(eaCode) },
+        isActive: true,
       },
       include: [
         {

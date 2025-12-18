@@ -26,6 +26,7 @@ import { SurveyEnumerationAreaSampling } from 'src/modules/sampling/entities/sur
 import { SurveyEnumerationAreaHouseholdSample } from 'src/modules/sampling/entities/survey-enumeration-area-household-sample.entity';
 import { SurveyEnumerationAreaStructure } from 'src/modules/survey/survey-enumeration-area-structure/entities/survey-enumeration-area-structure.entity';
 import { EnumerationAreaSubAdministrativeZone } from 'src/modules/location/enumeration-area/entities/enumeration-area-sub-administrative-zone.entity';
+import { EnumerationAreaLineage } from 'src/modules/location/enumeration-area/entities/enumeration-area-lineage.entity';
 
 export const databaseProviders = [
   {
@@ -80,6 +81,7 @@ export const databaseProviders = [
         SubAdministrativeZone,
         EnumerationArea,
         EnumerationAreaSubAdministrativeZone,
+        EnumerationAreaLineage,
 
         Survey,
         SurveyEnumerationArea,

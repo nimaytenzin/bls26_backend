@@ -9,7 +9,17 @@ import { SubAdministrativeZone } from '../sub-administrative-zone/entities/sub-a
 import { AdministrativeZone } from '../administrative-zone/entities/administrative-zone.entity';
 import { Dzongkhag } from '../dzongkhag/entities/dzongkhag.entity';
 import { EnumerationAreaSubAdministrativeZone } from './entities/enumeration-area-sub-administrative-zone.entity';
+import { EnumerationAreaLineage, OperationType } from './entities/enumeration-area-lineage.entity';
+import { SplitEnumerationAreaDto } from './dto/split-enumeration-area.dto';
+import { MergeEnumerationAreasDto } from './dto/merge-enumeration-areas.dto';
+import { EaLineageResponseDto, EaLineageNodeDto, EaOperationDto } from './dto/ea-lineage-response.dto';
+import { EaHistoryResponseDto, EaHistoryNodeDto } from './dto/ea-history-response.dto';
 import { Op } from 'sequelize';
+import {
+  PaginationUtil,
+  PaginationQueryDto,
+  PaginatedResponse,
+} from '../../../common/utils/pagination.util';
 
 @Injectable()
 export class EnumerationAreaService {
@@ -18,6 +28,8 @@ export class EnumerationAreaService {
     private readonly enumerationAreaRepository: typeof EnumerationArea,
     @Inject('ENUMERATION_AREA_SUB_ADMINISTRATIVE_ZONE_REPOSITORY')
     private readonly junctionRepository: typeof EnumerationAreaSubAdministrativeZone,
+    @Inject('ENUMERATION_AREA_LINEAGE_REPOSITORY')
+    private readonly lineageRepository: typeof EnumerationAreaLineage,
     @Inject('SUB_ADMINISTRATIVE_ZONE_REPOSITORY')
     private readonly subAdministrativeZoneRepository: typeof SubAdministrativeZone,
     @Inject('ADMINISTRATIVE_ZONE_REPOSITORY')
@@ -214,15 +226,19 @@ export class EnumerationAreaService {
 
   /**
    * Find all enumeration areas with optional associations
+   * By default, only returns active EAs (isActive = true)
    * @param withGeom - Include geometry (default: false)
    * @param includeSubAdminZone - Include sub-administrative zones via junction table (default: false)
+   * @param includeInactive - Include inactive EAs (default: false)
    */
   async findAll(
     withGeom = false,
     includeSubAdminZone = false,
+    includeInactive = false,
   ): Promise<EnumerationArea[]> {
     const options: any = {
       attributes: withGeom ? undefined : { exclude: ['geom'] },
+      where: includeInactive ? {} : { isActive: true },
     };
 
     if (includeSubAdminZone) {
@@ -230,6 +246,56 @@ export class EnumerationAreaService {
         {
           model: SubAdministrativeZone,
           as: 'subAdministrativeZones',  // Via junction table
+          through: { attributes: [] },
+          attributes: { exclude: withGeom ? [] : ['geom'] },
+          include: [
+            {
+              model: AdministrativeZone,
+              attributes: { exclude: ['geom'] },
+              include: [
+                {
+                  model: Dzongkhag,
+                  attributes: { exclude: ['geom'] },
+                },
+              ],
+            },
+          ],
+        },
+      ];
+    }
+
+    return await this.enumerationAreaRepository.findAll<EnumerationArea>(
+      options,
+    );
+  }
+
+  /**
+   * Find all active enumeration areas
+   */
+  async findAllActive(
+    withGeom = false,
+    includeSubAdminZone = false,
+  ): Promise<EnumerationArea[]> {
+    return this.findAll(withGeom, includeSubAdminZone, false);
+  }
+
+  /**
+   * Find all inactive enumeration areas
+   */
+  async findAllInactive(
+    withGeom = false,
+    includeSubAdminZone = false,
+  ): Promise<EnumerationArea[]> {
+    const options: any = {
+      attributes: withGeom ? undefined : { exclude: ['geom'] },
+      where: { isActive: false },
+    };
+
+    if (includeSubAdminZone) {
+      options.include = [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',
           through: { attributes: [] },
           attributes: { exclude: withGeom ? [] : ['geom'] },
           include: [
@@ -302,14 +368,17 @@ export class EnumerationAreaService {
   /**
    * Find enumeration areas by sub-administrative zone with optional associations
    * Uses junction table to find all EAs where the SAZ is linked
+   * By default, only returns active EAs (isActive = true)
    * @param subAdministrativeZoneId - Sub-Administrative Zone ID
    * @param withGeom - Include geometry (default: false)
    * @param includeSubAdminZone - Include sub-administrative zones via junction table (default: false)
+   * @param includeInactive - Include inactive EAs (default: false)
    */
   async findBySubAdministrativeZone(
     subAdministrativeZoneId: number,
     withGeom = false,
     includeSubAdminZone = false,
+    includeInactive = false,
   ): Promise<EnumerationArea[]> {
     const include: any[] = [
       {
@@ -337,6 +406,7 @@ export class EnumerationAreaService {
 
     return await this.enumerationAreaRepository.findAll<EnumerationArea>({
       attributes: withGeom ? undefined : { exclude: ['geom'] },
+      where: includeInactive ? {} : { isActive: true },
       include,
     });
   }
@@ -374,17 +444,20 @@ export class EnumerationAreaService {
   /**
    * Find enumeration areas by administrative zone with optional associations
    * Uses junction table to find all EAs linked to SAZs in the given administrative zone
+   * By default, only returns active EAs (isActive = true)
    * @param administrativeZoneId - Administrative Zone ID
    * @param withGeom - Include geometry (default: false)
    * @param includeSubAdminZone - Include parent sub-administrative zone (default: false)
+   * @param includeInactive - Include inactive EAs (default: false)
    */
   async findByAdministrativeZone(
     administrativeZoneId: number,
     withGeom = false,
     includeSubAdminZone = false,
+    includeInactive = false,
   ): Promise<EnumerationArea[]> {
     const options: any = {
-      where: {},
+      where: includeInactive ? {} : { isActive: true },
       attributes: withGeom ? undefined : { exclude: ['geom'] },
       include: [
         {
@@ -414,7 +487,9 @@ export class EnumerationAreaService {
 
   async findAllAsGeoJsonByAdministrativeZone(
     administrativeZoneId: number,
+    includeInactive = false,
   ): Promise<any> {
+    const inactiveFilter = includeInactive ? '' : 'AND ea."isActive" = true';
     const data: any = await this.enumerationAreaRepository.sequelize.query(
       `SELECT jsonb_build_object(
         'type',     'FeatureCollection',
@@ -434,6 +509,7 @@ export class EnumerationAreaService {
             ON ea.id = junction."enumerationAreaId"
           INNER JOIN "SubAdministrativeZones" saz ON junction."subAdministrativeZoneId" = saz.id
           WHERE saz."administrativeZoneId" = ${administrativeZoneId}
+          ${inactiveFilter}
           ORDER BY ea.id
         ) inputs
       ) features;`,
@@ -442,7 +518,8 @@ export class EnumerationAreaService {
     return data[0][0].jsonb_build_object;
   }
 
-  async findAllAsGeoJson(): Promise<any> {
+  async findAllAsGeoJson(includeInactive = false): Promise<any> {
+    const inactiveFilter = includeInactive ? '' : 'WHERE "isActive" = true';
     const data: any = await this.enumerationAreaRepository.sequelize.query(
       `SELECT jsonb_build_object(
         'type',     'FeatureCollection',
@@ -455,7 +532,7 @@ export class EnumerationAreaService {
           'geometry',   ST_AsGeoJSON(geom)::jsonb,
           'properties', to_jsonb(inputs) - 'geom'
         ) AS feature
-        FROM (SELECT * FROM "EnumerationAreas" ORDER BY id) inputs
+        FROM (SELECT * FROM "EnumerationAreas" ${inactiveFilter} ORDER BY id) inputs
       ) features;`,
     );
 
@@ -872,6 +949,585 @@ export class EnumerationAreaService {
       await transaction.rollback();
       throw error;
     }
+  }
+
+  /**
+   * Split an enumeration area into multiple new EAs
+   * Marks the source EA as inactive and creates lineage records
+   */
+  async splitEnumerationArea(
+    sourceEaId: number,
+    splitData: SplitEnumerationAreaDto['newEas'],
+    reason?: string,
+  ): Promise<EnumerationArea[]> {
+    // Start transaction
+    const transaction = await this.enumerationAreaRepository.sequelize.transaction();
+
+    try {
+      // Validate source EA exists and is active
+      const sourceEa = await this.enumerationAreaRepository.findByPk(sourceEaId, {
+        transaction,
+      });
+
+      if (!sourceEa) {
+        throw new NotFoundException(`Enumeration area with ID ${sourceEaId} not found`);
+      }
+
+      if (!sourceEa.isActive) {
+        throw new BadRequestException(
+          `Cannot split inactive enumeration area with ID ${sourceEaId}`,
+        );
+      }
+
+      // Validate new areaCodes are unique
+      const newAreaCodes = splitData.map((ea) => ea.areaCode);
+      const existingEAs = await this.enumerationAreaRepository.findAll({
+        where: {
+          areaCode: { [Op.in]: newAreaCodes },
+        },
+        transaction,
+      });
+
+      if (existingEAs.length > 0) {
+        throw new BadRequestException(
+          `Area codes already exist: ${existingEAs.map((ea) => ea.areaCode).join(', ')}`,
+        );
+      }
+
+      // Mark source EA as inactive
+      await this.enumerationAreaRepository.update(
+        {
+          isActive: false,
+          deactivatedAt: new Date(),
+          deactivatedReason: reason || `Split into ${splitData.length} new enumeration areas`,
+        },
+        {
+          where: { id: sourceEaId },
+          transaction,
+        },
+      );
+
+      // Create new EAs
+      const newEAs: EnumerationArea[] = [];
+      for (const eaData of splitData) {
+        const { subAdministrativeZoneIds, geom, ...restData } = eaData;
+
+        // Convert GeoJSON geometry to PostGIS format
+        const geomString = JSON.stringify(JSON.parse(geom));
+        const geomValue = Sequelize.fn('ST_GeomFromGeoJSON', geomString);
+
+        // Create EA
+        const newEa = await this.enumerationAreaRepository.create(
+          {
+            ...restData,
+            geom: geomValue,
+            isActive: true,
+          },
+          {
+            transaction,
+            fields: ['name', 'areaCode', 'description', 'geom', 'isActive'],
+          },
+        );
+
+        // Link to SAZs via junction table
+        if (subAdministrativeZoneIds && subAdministrativeZoneIds.length > 0) {
+          await this.junctionRepository.bulkCreate(
+            subAdministrativeZoneIds.map((sazId) => ({
+              enumerationAreaId: newEa.id,
+              subAdministrativeZoneId: sazId,
+            })),
+            { transaction },
+          );
+        }
+
+        // Create lineage record
+        await this.lineageRepository.create(
+          {
+            parentEaId: sourceEaId,
+            childEaId: newEa.id,
+            operationType: OperationType.SPLIT,
+            operationDate: new Date(),
+            reason: reason,
+          },
+          { transaction },
+        );
+
+        newEAs.push(newEa);
+      }
+
+      // Commit transaction
+      await transaction.commit();
+
+      // Reload EAs with SAZs
+      const result: EnumerationArea[] = [];
+      for (const ea of newEAs) {
+        const loadedEa = await this.findOne(ea.id, false, true);
+        result.push(loadedEa);
+      }
+
+      return result;
+    } catch (error) {
+      // Rollback transaction on any error
+      await transaction.rollback();
+      throw error;
+    }
+  }
+
+  /**
+   * Merge multiple enumeration areas into one new EA
+   * Marks all source EAs as inactive and creates lineage records
+   */
+  async mergeEnumerationAreas(
+    sourceEaIds: number[],
+    mergedEaData: MergeEnumerationAreasDto['mergedEa'],
+    reason?: string,
+  ): Promise<EnumerationArea> {
+    // Start transaction
+    const transaction = await this.enumerationAreaRepository.sequelize.transaction();
+
+    try {
+      // Validate all source EAs exist and are active
+      const sourceEAs = await this.enumerationAreaRepository.findAll({
+        where: {
+          id: { [Op.in]: sourceEaIds },
+        },
+        transaction,
+      });
+
+      if (sourceEAs.length !== sourceEaIds.length) {
+        const foundIds = sourceEAs.map((ea) => ea.id);
+        const missingIds = sourceEaIds.filter((id) => !foundIds.includes(id));
+        throw new NotFoundException(
+          `Enumeration areas not found: ${missingIds.join(', ')}`,
+        );
+      }
+
+      // Check if any are inactive
+      const inactiveEAs = sourceEAs.filter((ea) => !ea.isActive);
+      if (inactiveEAs.length > 0) {
+        throw new BadRequestException(
+          `Cannot merge inactive enumeration areas: ${inactiveEAs.map((ea) => ea.id).join(', ')}`,
+        );
+      }
+
+      // Validate new areaCode is unique
+      const existingEa = await this.enumerationAreaRepository.findOne({
+        where: {
+          areaCode: mergedEaData.areaCode,
+        },
+        transaction,
+      });
+
+      if (existingEa) {
+        throw new BadRequestException(
+          `Area code "${mergedEaData.areaCode}" already exists`,
+        );
+      }
+
+      // Mark all source EAs as inactive
+      await this.enumerationAreaRepository.update(
+        {
+          isActive: false,
+          deactivatedAt: new Date(),
+          deactivatedReason: reason || `Merged into new enumeration area`,
+        },
+        {
+          where: { id: { [Op.in]: sourceEaIds } },
+          transaction,
+        },
+      );
+
+      // Create merged EA
+      const { subAdministrativeZoneIds, geom, ...restData } = mergedEaData;
+
+      // Convert GeoJSON geometry to PostGIS format
+      const geomString = JSON.stringify(JSON.parse(geom));
+      const geomValue = Sequelize.fn('ST_GeomFromGeoJSON', geomString);
+
+      const mergedEa = await this.enumerationAreaRepository.create(
+        {
+          ...restData,
+          geom: geomValue,
+          isActive: true,
+        },
+        {
+          transaction,
+          fields: ['name', 'areaCode', 'description', 'geom', 'isActive'],
+        },
+      );
+
+      // Link to SAZs via junction table
+      if (subAdministrativeZoneIds && subAdministrativeZoneIds.length > 0) {
+        await this.junctionRepository.bulkCreate(
+          subAdministrativeZoneIds.map((sazId) => ({
+            enumerationAreaId: mergedEa.id,
+            subAdministrativeZoneId: sazId,
+          })),
+          { transaction },
+        );
+      }
+
+      // Create lineage records for each source EA
+      for (const sourceEaId of sourceEaIds) {
+        await this.lineageRepository.create(
+          {
+            parentEaId: sourceEaId,
+            childEaId: mergedEa.id,
+            operationType: OperationType.MERGE,
+            operationDate: new Date(),
+            reason: reason,
+          },
+          { transaction },
+        );
+      }
+
+      // Commit transaction
+      await transaction.commit();
+
+      // Reload EA with SAZs
+      return await this.findOne(mergedEa.id, false, true);
+    } catch (error) {
+      // Rollback transaction on any error
+      await transaction.rollback();
+      throw error;
+    }
+  }
+
+  /**
+   * Get EA lineage (ancestors and/or descendants)
+   * @param eaId - Enumeration Area ID
+   * @param direction - 'ancestors', 'descendants', or 'both'
+   */
+  async getEaLineage(
+    eaId: number,
+    direction: 'ancestors' | 'descendants' | 'both' = 'both',
+  ): Promise<EaLineageResponseDto> {
+    // Get the EA
+    const ea = await this.enumerationAreaRepository.findByPk(eaId);
+    if (!ea) {
+      throw new NotFoundException(`Enumeration area with ID ${eaId} not found`);
+    }
+
+    const ancestors: EaLineageNodeDto[] = [];
+    const descendants: EaLineageNodeDto[] = [];
+    const operations: EaOperationDto[] = [];
+
+    // Helper function to recursively get ancestors
+    const getAncestors = async (currentEaId: number): Promise<EaLineageNodeDto[]> => {
+      const lineages = await this.lineageRepository.findAll({
+        where: { childEaId: currentEaId },
+        include: [
+          {
+            model: EnumerationArea,
+            as: 'parentEa',
+            attributes: { exclude: ['geom'] },
+          },
+        ],
+        order: [['operationDate', 'DESC']],
+      });
+
+      const nodes: EaLineageNodeDto[] = [];
+
+      for (const lineage of lineages) {
+        const operation: EaOperationDto = {
+          type: lineage.operationType,
+          date: lineage.operationDate,
+          reason: lineage.reason,
+          parentEaId: lineage.parentEaId,
+          childEaId: lineage.childEaId,
+        };
+
+        operations.push(operation);
+
+        // Recursively get ancestors of this parent
+        const parentAncestors = await getAncestors(lineage.parentEaId);
+
+        const node: EaLineageNodeDto = {
+          ea: lineage.parentEa,
+          operation,
+          children: [],
+          parents: parentAncestors,
+        };
+
+        nodes.push(node);
+      }
+
+      return nodes;
+    };
+
+    // Helper function to recursively get descendants
+    const getDescendants = async (currentEaId: number): Promise<EaLineageNodeDto[]> => {
+      const lineages = await this.lineageRepository.findAll({
+        where: { parentEaId: currentEaId },
+        include: [
+          {
+            model: EnumerationArea,
+            as: 'childEa',
+            attributes: { exclude: ['geom'] },
+          },
+        ],
+        order: [['operationDate', 'DESC']],
+      });
+
+      const nodes: EaLineageNodeDto[] = [];
+
+      for (const lineage of lineages) {
+        const operation: EaOperationDto = {
+          type: lineage.operationType,
+          date: lineage.operationDate,
+          reason: lineage.reason,
+          parentEaId: lineage.parentEaId,
+          childEaId: lineage.childEaId,
+        };
+
+        operations.push(operation);
+
+        // Recursively get descendants of this child
+        const childDescendants = await getDescendants(lineage.childEaId);
+
+        const node: EaLineageNodeDto = {
+          ea: lineage.childEa,
+          operation,
+          children: childDescendants,
+          parents: [],
+        };
+
+        nodes.push(node);
+      }
+
+      return nodes;
+    };
+
+    // Get ancestors if requested
+    if (direction === 'ancestors' || direction === 'both') {
+      const ancestorNodes = await getAncestors(eaId);
+      ancestors.push(...ancestorNodes);
+    }
+
+    // Get descendants if requested
+    if (direction === 'descendants' || direction === 'both') {
+      const descendantNodes = await getDescendants(eaId);
+      descendants.push(...descendantNodes);
+    }
+
+    return {
+      ea,
+      ancestors,
+      descendants,
+      operations: Array.from(
+        new Map(
+          operations.map((op) => [`${op.parentEaId}-${op.childEaId}`, op])
+        ).values()
+      ),
+    };
+  }
+
+  /**
+   * Get complete EA history tree (both ancestors and descendants)
+   * Optimized for frontend visualization
+   */
+  async getEaHistory(eaId: number): Promise<EaHistoryResponseDto> {
+    // Get the EA
+    const ea = await this.enumerationAreaRepository.findByPk(eaId, {
+      attributes: { exclude: ['geom'] },
+    });
+    if (!ea) {
+      throw new NotFoundException(`Enumeration area with ID ${eaId} not found`);
+    }
+
+    // Helper function to build history tree recursively
+    const buildHistoryTree = async (
+      currentEaId: number,
+      direction: 'up' | 'down',
+    ): Promise<EaHistoryNodeDto[]> => {
+      let lineages;
+      if (direction === 'up') {
+        // Get ancestors (where this EA came from)
+        lineages = await this.lineageRepository.findAll({
+          where: { childEaId: currentEaId },
+          include: [
+            {
+              model: EnumerationArea,
+              as: 'parentEa',
+              attributes: { exclude: ['geom'] },
+            },
+          ],
+          order: [['operationDate', 'DESC']],
+        });
+      } else {
+        // Get descendants (what this EA became)
+        lineages = await this.lineageRepository.findAll({
+          where: { parentEaId: currentEaId },
+          include: [
+            {
+              model: EnumerationArea,
+              as: 'childEa',
+              attributes: { exclude: ['geom'] },
+            },
+          ],
+          order: [['operationDate', 'DESC']],
+        });
+      }
+
+      const nodes: EaHistoryNodeDto[] = [];
+
+      for (const lineage of lineages) {
+        const targetEa = direction === 'up' ? lineage.parentEa : lineage.childEa;
+
+        const operation = {
+          type: lineage.operationType,
+          date: lineage.operationDate,
+          reason: lineage.reason,
+        };
+
+        // Recursively build tree
+        const children = direction === 'down' ? await buildHistoryTree(targetEa.id, 'down') : [];
+        const parents = direction === 'up' ? await buildHistoryTree(targetEa.id, 'up') : [];
+
+        const node: EaHistoryNodeDto = {
+          ea: targetEa,
+          operation,
+          children,
+          parents,
+        };
+
+        nodes.push(node);
+      }
+
+      return nodes;
+    };
+
+    // Build complete history tree
+    const ancestors = await buildHistoryTree(eaId, 'up');
+    const descendants = await buildHistoryTree(eaId, 'down');
+
+    return {
+      currentEa: ea,
+      history: {
+        ancestors,
+        descendants,
+      },
+    };
+  }
+
+  /**
+   * Get all enumeration areas that were split, ordered by latest, paginated
+   * @param query - Pagination query parameters
+   * @returns Paginated list of split enumeration areas
+   */
+  async findAllSplitPaginated(
+    query: PaginationQueryDto = {},
+  ): Promise<PaginatedResponse<EnumerationArea>> {
+    const options = PaginationUtil.normalizePaginationOptions(query);
+    const { offset, limit } = PaginationUtil.calculateOffsetLimit(options);
+
+    // Find all unique parent EAs from SPLIT operations with their latest operation date
+    const splitLineages = await this.lineageRepository.findAll({
+      where: {
+        operationType: OperationType.SPLIT,
+      },
+      attributes: [
+        'parentEaId',
+        [Sequelize.fn('MAX', Sequelize.col('operationDate')), 'latestDate'],
+      ],
+      group: ['parentEaId'],
+      raw: true,
+    });
+
+    if (splitLineages.length === 0) {
+      return PaginationUtil.createPaginatedResponse([], 0, options);
+    }
+
+    // Sort by operation date DESC and get paginated IDs
+    const sortedLineages = (splitLineages as any[]).sort((a, b) => {
+      const dateA = new Date(a.latestDate).getTime();
+      const dateB = new Date(b.latestDate).getTime();
+      return dateB - dateA;
+    });
+
+    const totalItems = sortedLineages.length;
+    const paginatedLineages = sortedLineages.slice(offset, offset + limit);
+    const paginatedEaIds = (paginatedLineages as any[]).map((l: any) => l.parentEaId);
+
+    // If no IDs to fetch, return empty result
+    if (paginatedEaIds.length === 0) {
+      return PaginationUtil.createPaginatedResponse([], totalItems, options);
+    }
+
+    // Get the EAs for the paginated IDs
+    const rows = await this.enumerationAreaRepository.findAll({
+      where: {
+        id: { [Op.in]: paginatedEaIds },
+      },
+      attributes: { exclude: ['geom'] },
+    });
+
+    // Maintain the order from paginatedLineages
+    const orderedRows = paginatedEaIds.map(id => 
+      rows.find(ea => ea.id === id)
+    ).filter(Boolean) as EnumerationArea[];
+
+    return PaginationUtil.createPaginatedResponse(orderedRows, totalItems, options);
+  }
+
+  /**
+   * Get all enumeration areas that were merged, ordered by latest, paginated
+   * @param query - Pagination query parameters
+   * @returns Paginated list of merged enumeration areas
+   */
+  async findAllMergedPaginated(
+    query: PaginationQueryDto = {},
+  ): Promise<PaginatedResponse<EnumerationArea>> {
+    const options = PaginationUtil.normalizePaginationOptions(query);
+    const { offset, limit } = PaginationUtil.calculateOffsetLimit(options);
+
+    // Find all unique child EAs from MERGE operations with their latest operation date
+    const mergeLineages = await this.lineageRepository.findAll({
+      where: {
+        operationType: OperationType.MERGE,
+      },
+      attributes: [
+        'childEaId',
+        [Sequelize.fn('MAX', Sequelize.col('operationDate')), 'latestDate'],
+      ],
+      group: ['childEaId'],
+      raw: true,
+    });
+
+    if (mergeLineages.length === 0) {
+      return PaginationUtil.createPaginatedResponse([], 0, options);
+    }
+
+    // Sort by operation date DESC and get paginated IDs
+    const sortedLineages = (mergeLineages as any[]).sort((a, b) => {
+      const dateA = new Date(a.latestDate).getTime();
+      const dateB = new Date(b.latestDate).getTime();
+      return dateB - dateA;
+    });
+
+    const totalItems = sortedLineages.length;
+    const paginatedLineages = sortedLineages.slice(offset, offset + limit);
+    const paginatedEaIds = (paginatedLineages as any[]).map((l: any) => l.childEaId);
+
+    // If no IDs to fetch, return empty result
+    if (paginatedEaIds.length === 0) {
+      return PaginationUtil.createPaginatedResponse([], totalItems, options);
+    }
+
+    // Get the EAs for the paginated IDs
+    const rows = await this.enumerationAreaRepository.findAll({
+      where: {
+        id: { [Op.in]: paginatedEaIds },
+      },
+      attributes: { exclude: ['geom'] },
+    });
+
+    // Maintain the order from paginatedLineages
+    const orderedRows = paginatedEaIds.map(id => 
+      rows.find(ea => ea.id === id)
+    ).filter(Boolean) as EnumerationArea[];
+
+    return PaginationUtil.createPaginatedResponse(orderedRows, totalItems, options);
   }
 
 }

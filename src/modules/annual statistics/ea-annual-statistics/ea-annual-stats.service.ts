@@ -184,6 +184,7 @@ export class EAAnnualStatsService {
 
     // Step 1: Get all Enumeration Areas
     const allEAs = await EnumerationArea.findAll({
+      where: { isActive: true },
       attributes: ['id'],
       raw: true,
     });
@@ -296,6 +297,7 @@ export class EAAnnualStatsService {
 
     // Step 1: Get all Enumeration Areas
     const allEAs = await EnumerationArea.findAll({
+      where: { isActive: true },
       attributes: ['id'],
       raw: true,
     });

@@ -72,9 +72,10 @@ export class DzongkhagService {
       });
 
       if (sazIds.length > 0) {
-        // Get all EAs linked to these SAZs via junction table
+        // Get all EAs linked to these SAZs via junction table (only active EAs)
         const enumerationAreas = await EnumerationArea.findAll({
           attributes: withGeom ? undefined : { exclude: ['geom'] },
+          where: { isActive: true },
           include: [
             {
               model: SubAdministrativeZone,
@@ -352,9 +353,10 @@ export class DzongkhagService {
       });
 
       if (sazIds.length > 0) {
-        // Get all EAs linked to these SAZs via junction table
+        // Get all EAs linked to these SAZs via junction table (only active EAs)
         const enumerationAreas = await EnumerationArea.findAll({
           attributes: withGeom ? undefined : { exclude: ['geom'] },
+          where: { isActive: true },
           include: [
             {
               model: SubAdministrativeZone,
@@ -453,6 +455,7 @@ export class DzongkhagService {
           attributes: withGeom 
             ? ['id', 'name', 'description', 'areaCode', 'geom']
             : ['id', 'name', 'description', 'areaCode'],
+          where: { isActive: true },
           include: [
             {
               model: SubAdministrativeZone,

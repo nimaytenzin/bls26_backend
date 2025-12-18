@@ -153,6 +153,7 @@ export class LocationDownloadService {
           INNER JOIN "EnumerationAreaSubAdministrativeZones" junction 
             ON ea.id = junction."enumerationAreaId"
           WHERE junction."subAdministrativeZoneId" = ANY(ARRAY[${subAdminZoneIds.join(',')}])
+            AND ea."isActive" = true
           ORDER BY ea.id
         ) inputs
       ) features;`,
@@ -308,6 +309,7 @@ export class LocationDownloadService {
           INNER JOIN "EnumerationAreaSubAdministrativeZones" junction 
             ON ea.id = junction."enumerationAreaId"
           WHERE junction."subAdministrativeZoneId" = ANY(ARRAY[${subAdminZoneIds.join(',')}])
+            AND ea."isActive" = true
           ORDER BY ea.id
         ) inputs
       ) features;`,

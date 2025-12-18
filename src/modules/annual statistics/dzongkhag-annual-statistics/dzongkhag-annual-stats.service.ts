@@ -221,6 +221,7 @@ export class DzongkhagAnnualStatsService {
 
           // Step 5: Get all Enumeration Areas for this SAZ via junction table
           const enumerationAreas = await EnumerationArea.findAll({
+            where: { isActive: true },
             include: [
               {
                 model: SubAdministrativeZone,
@@ -460,6 +461,7 @@ export class DzongkhagAnnualStatsService {
 
           // Step 5: Get all Enumeration Areas for this SAZ via junction table
           const enumerationAreas = await EnumerationArea.findAll({
+            where: { isActive: true },
             include: [
               {
                 model: SubAdministrativeZone,
