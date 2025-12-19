@@ -209,23 +209,23 @@ export class EnumerationAreaController {
   }
 
   /**
-   * Create two SAZs from GeoJSON files and a single EA that links to both
+   * Create multiple SAZs from GeoJSON files and a single EA that links to all of them
    * 
    * @access Admin only
-   * @route POST /enumeration-area/create-two-sazs-with-ea
+   * @route POST /enumeration-area/create-multiple-sazs-with-ea
    * @form multipart/form-data with fields:
-   *   - saz1File: GeoJSON file for SAZ1 (required)
-   *   - saz2File: GeoJSON file for SAZ2 (required)
-   *   - saz1Data: JSON string with { name, areaCode, type, administrativeZoneId }
-   *   - saz2Data: JSON string with { name, areaCode, type, administrativeZoneId }
+   *   - files: GeoJSON files (2-20 files, one per SAZ, required)
+   *   - sazDataArray: JSON string with array of SAZ data objects
+   *     [{ name, areaCode, type, administrativeZoneId }, ...]
+   *   - eaData: JSON string with { name, areaCode, description? }
    * 
-   * @returns Object with created subAdministrativeZone1, subAdministrativeZone2, and enumerationArea
+   * @returns Object with created subAdministrativeZones array and enumerationArea
    */
-  @Post('create-two-sazs-with-ea')
+  @Post('create-multiple-sazs-with-ea')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @UseInterceptors(
-    FilesInterceptor('files', 2, {
+    FilesInterceptor('files', 20, {
       limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit per file
       fileFilter: (req, file, cb) => {
         if (
@@ -246,138 +246,131 @@ export class EnumerationAreaController {
       },
     }),
   )
-  async createTwoSazsWithEa(
+  async createMultipleSazsWithEa(
     @UploadedFiles() files: any[],
     @Body() body: {
-      saz1Data: string; // JSON string
-      saz2Data: string; // JSON string
+      sazDataArray: string; // JSON string with array of SAZ data
+      eaData: string; // JSON string with EA data
     },
   ) {
-    if (!files || files.length !== 2) {
-      throw new BadRequestException('Exactly 2 GeoJSON files are required');
+    if (!files || files.length < 2) {
+      throw new BadRequestException('At least 2 GeoJSON files are required');
     }
 
-    if (!body.saz1Data || !body.saz2Data) {
+    if (files.length > 20) {
+      throw new BadRequestException('Maximum 20 GeoJSON files are allowed');
+    }
+
+    if (!body.sazDataArray || !body.eaData) {
       throw new BadRequestException(
-        'Both saz1Data and saz2Data are required',
+        'Both sazDataArray and eaData are required',
       );
     }
 
     try {
       // Parse form data
-      const saz1Data = JSON.parse(body.saz1Data);
-      const saz2Data = JSON.parse(body.saz2Data);
+      const sazDataArray = JSON.parse(body.sazDataArray);
+      const eaData = JSON.parse(body.eaData);
 
-      // Validate required fields for SAZ1
-      if (
-        !saz1Data.name ||
-        !saz1Data.areaCode ||
-        !saz1Data.type ||
-        !saz1Data.administrativeZoneId
-      ) {
+      // Validate sazDataArray is an array
+      if (!Array.isArray(sazDataArray)) {
+        throw new BadRequestException('sazDataArray must be an array');
+      }
+
+      // Validate number of files matches number of SAZs
+      if (files.length !== sazDataArray.length) {
         throw new BadRequestException(
-          'SAZ1 data missing required fields: name, areaCode, type, administrativeZoneId',
+          `Number of files (${files.length}) must match number of SAZs (${sazDataArray.length})`,
         );
       }
 
-      // Validate required fields for SAZ2
-      if (
-        !saz2Data.name ||
-        !saz2Data.areaCode ||
-        !saz2Data.type ||
-        !saz2Data.administrativeZoneId
-      ) {
+      // Validate minimum 2 SAZs
+      if (sazDataArray.length < 2) {
+        throw new BadRequestException('At least 2 SAZs are required');
+      }
+
+      // Validate EA data
+      if (!eaData.name || !eaData.areaCode) {
         throw new BadRequestException(
-          'SAZ2 data missing required fields: name, areaCode, type, administrativeZoneId',
+          'EA data missing required fields: name, areaCode',
         );
       }
 
-      // Parse GeoJSON files
-      const saz1GeoJson = JSON.parse(files[0].buffer.toString('utf-8'));
-      const saz2GeoJson = JSON.parse(files[1].buffer.toString('utf-8'));
-
-      // Extract geometry from GeoJSON
-      let saz1Geometry;
-      let saz2Geometry;
-
-      // Handle SAZ1 geometry
-      if (saz1GeoJson.type === 'Feature' && saz1GeoJson.geometry) {
-        saz1Geometry = saz1GeoJson.geometry;
-      } else if (
-        saz1GeoJson.type === 'FeatureCollection' &&
-        saz1GeoJson.features &&
-        saz1GeoJson.features.length > 0
-      ) {
-        saz1Geometry = saz1GeoJson.features[0].geometry;
-      } else if (
-        saz1GeoJson.type &&
-        [
-          'Point',
-          'LineString',
-          'Polygon',
-          'MultiPoint',
-          'MultiLineString',
-          'MultiPolygon',
-          'GeometryCollection',
-        ].includes(saz1GeoJson.type)
-      ) {
-        saz1Geometry = saz1GeoJson;
-      } else {
-        throw new BadRequestException(
-          'SAZ1 GeoJSON: Invalid format. Must be a Feature, FeatureCollection, or Geometry object.',
-        );
+      // Validate each SAZ data
+      for (let i = 0; i < sazDataArray.length; i++) {
+        const sazData = sazDataArray[i];
+        if (
+          !sazData.name ||
+          !sazData.areaCode ||
+          !sazData.type ||
+          !sazData.administrativeZoneId
+        ) {
+          throw new BadRequestException(
+            `SAZ ${i + 1} data missing required fields: name, areaCode, type, administrativeZoneId`,
+          );
+        }
       }
 
-      // Handle SAZ2 geometry
-      if (saz2GeoJson.type === 'Feature' && saz2GeoJson.geometry) {
-        saz2Geometry = saz2GeoJson.geometry;
-      } else if (
-        saz2GeoJson.type === 'FeatureCollection' &&
-        saz2GeoJson.features &&
-        saz2GeoJson.features.length > 0
-      ) {
-        saz2Geometry = saz2GeoJson.features[0].geometry;
-      } else if (
-        saz2GeoJson.type &&
-        [
-          'Point',
-          'LineString',
-          'Polygon',
-          'MultiPoint',
-          'MultiLineString',
-          'MultiPolygon',
-          'GeometryCollection',
-        ].includes(saz2GeoJson.type)
-      ) {
-        saz2Geometry = saz2GeoJson;
-      } else {
-        throw new BadRequestException(
-          'SAZ2 GeoJSON: Invalid format. Must be a Feature, FeatureCollection, or Geometry object.',
-        );
+      // Parse GeoJSON files and extract geometries
+      const geometries: any[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const geoJsonData = JSON.parse(files[i].buffer.toString('utf-8'));
+        let geometry;
+
+        // Extract geometry from GeoJSON
+        if (geoJsonData.type === 'Feature' && geoJsonData.geometry) {
+          geometry = geoJsonData.geometry;
+        } else if (
+          geoJsonData.type === 'FeatureCollection' &&
+          geoJsonData.features &&
+          geoJsonData.features.length > 0
+        ) {
+          geometry = geoJsonData.features[0].geometry;
+        } else if (
+          geoJsonData.type &&
+          [
+            'Point',
+            'LineString',
+            'Polygon',
+            'MultiPoint',
+            'MultiLineString',
+            'MultiPolygon',
+            'GeometryCollection',
+          ].includes(geoJsonData.type)
+        ) {
+          geometry = geoJsonData;
+        } else {
+          throw new BadRequestException(
+            `File ${i + 1} GeoJSON: Invalid format. Must be a Feature, FeatureCollection, or Geometry object.`,
+          );
+        }
+
+        if (!geometry) {
+          throw new BadRequestException(
+            `No geometry found in file ${i + 1}`,
+          );
+        }
+
+        geometries.push(geometry);
       }
 
-      if (!saz1Geometry || !saz2Geometry) {
-        throw new BadRequestException(
-          'No geometry found in one or both GeoJSON files.',
-        );
-      }
+      // Prepare SAZ data array for service
+      const sazDataForService = sazDataArray.map((sazData, index) => ({
+        name: sazData.name,
+        areaCode: sazData.areaCode,
+        type: sazData.type.toLowerCase() as 'chiwog' | 'lap',
+        administrativeZoneId: parseInt(sazData.administrativeZoneId, 10),
+        geometry: geometries[index],
+      }));
 
       // Call service method
-      const result = await this.enumerationAreaService.createTwoSazsWithEa(
+      const result = await this.enumerationAreaService.createMultipleSazsWithEa(
+        sazDataForService,
         {
-          name: saz1Data.name,
-          areaCode: saz1Data.areaCode,
-          type: saz1Data.type.toLowerCase() as 'chiwog' | 'lap',
-          administrativeZoneId: parseInt(saz1Data.administrativeZoneId, 10),
+          name: eaData.name,
+          areaCode: eaData.areaCode,
+          description: eaData.description,
         },
-        saz1Geometry,
-        {
-          name: saz2Data.name,
-          areaCode: saz2Data.areaCode,
-          type: saz2Data.type.toLowerCase() as 'chiwog' | 'lap',
-          administrativeZoneId: parseInt(saz2Data.administrativeZoneId, 10),
-        },
-        saz2Geometry,
       );
 
       return result;

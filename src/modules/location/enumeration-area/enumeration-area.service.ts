@@ -720,74 +720,89 @@ export class EnumerationAreaService {
    * @param saz2Geometry - SAZ2 GeoJSON geometry
    * @returns Created SAZs and EA
    */
-  async createTwoSazsWithEa(
-    saz1Data: {
+  async createMultipleSazsWithEa(
+    sazDataArray: Array<{
       name: string;
       areaCode: string;
       type: 'chiwog' | 'lap';
       administrativeZoneId: number;
-    },
-    saz1Geometry: any,
-    saz2Data: {
+      geometry: any;
+    }>,
+    eaData: {
       name: string;
       areaCode: string;
-      type: 'chiwog' | 'lap';
-      administrativeZoneId: number;
+      description?: string;
     },
-    saz2Geometry: any,
   ): Promise<{
-    subAdministrativeZone1: SubAdministrativeZone;
-    subAdministrativeZone2: SubAdministrativeZone;
+    subAdministrativeZones: SubAdministrativeZone[];
     enumerationArea: EnumerationArea;
   }> {
-    // Validate both SAZs have same administrativeZoneId
-    if (saz1Data.administrativeZoneId !== saz2Data.administrativeZoneId) {
+    // Validate all SAZs have same administrativeZoneId
+    const firstAdminZoneId = sazDataArray[0].administrativeZoneId;
+    const allSameAdminZone = sazDataArray.every(
+      (saz) => saz.administrativeZoneId === firstAdminZoneId,
+    );
+    if (!allSameAdminZone) {
       throw new BadRequestException(
-        'Both SAZs must belong to the same Administrative Zone',
+        'All SAZs must belong to the same Administrative Zone',
       );
     }
 
     // Validate administrative zone exists
     const adminZone = await this.administrativeZoneRepository.findByPk(
-      saz1Data.administrativeZoneId,
+      firstAdminZoneId,
     );
     if (!adminZone) {
       throw new NotFoundException(
-        `Administrative Zone with ID ${saz1Data.administrativeZoneId} not found`,
+        `Administrative Zone with ID ${firstAdminZoneId} not found`,
       );
     }
 
-    // Validate types
-    if (!['chiwog', 'lap'].includes(saz1Data.type.toLowerCase())) {
-      throw new BadRequestException('SAZ1 type must be "chiwog" or "lap"');
-    }
-    if (!['chiwog', 'lap'].includes(saz2Data.type.toLowerCase())) {
-      throw new BadRequestException('SAZ2 type must be "chiwog" or "lap"');
+    // Validate types and check for duplicates
+    const areaCodes = new Set<string>();
+    for (let i = 0; i < sazDataArray.length; i++) {
+      const sazData = sazDataArray[i];
+      
+      if (!['chiwog', 'lap'].includes(sazData.type.toLowerCase())) {
+        throw new BadRequestException(
+          `SAZ ${i + 1} type must be "chiwog" or "lap"`,
+        );
+      }
+
+      // Check for duplicate area codes in the request
+      const areaCodeKey = `${sazData.areaCode}-${sazData.administrativeZoneId}`;
+      if (areaCodes.has(areaCodeKey)) {
+        throw new BadRequestException(
+          `Duplicate areaCode "${sazData.areaCode}" found in SAZ ${i + 1}`,
+        );
+      }
+      areaCodes.add(areaCodeKey);
+
+      // Check if SAZ already exists (by areaCode + administrativeZoneId)
+      const existingSAZ = await this.subAdministrativeZoneRepository.findOne({
+        where: {
+          areaCode: sazData.areaCode,
+          administrativeZoneId: sazData.administrativeZoneId,
+        },
+      });
+      if (existingSAZ) {
+        throw new BadRequestException(
+          `SAZ ${i + 1} with areaCode "${sazData.areaCode}" already exists in Administrative Zone ${sazData.administrativeZoneId}`,
+        );
+      }
     }
 
-    // Check if SAZ1 already exists (by areaCode + administrativeZoneId)
-    const existingSAZ1 = await this.subAdministrativeZoneRepository.findOne({
+    // Validate EA areaCode is unique
+    const existingEa = await this.enumerationAreaRepository.findOne({
       where: {
-        areaCode: saz1Data.areaCode,
-        administrativeZoneId: saz1Data.administrativeZoneId,
+        areaCode: eaData.areaCode,
+        isActive: true,
       },
     });
-    if (existingSAZ1) {
-      throw new BadRequestException(
-        `SAZ1 with areaCode "${saz1Data.areaCode}" already exists in Administrative Zone ${saz1Data.administrativeZoneId}`,
-      );
-    }
 
-    // Check if SAZ2 already exists (by areaCode + administrativeZoneId)
-    const existingSAZ2 = await this.subAdministrativeZoneRepository.findOne({
-      where: {
-        areaCode: saz2Data.areaCode,
-        administrativeZoneId: saz2Data.administrativeZoneId,
-      },
-    });
-    if (existingSAZ2) {
+    if (existingEa) {
       throw new BadRequestException(
-        `SAZ2 with areaCode "${saz2Data.areaCode}" already exists in Administrative Zone ${saz2Data.administrativeZoneId}`,
+        `EA with areaCode "${eaData.areaCode}" already exists`,
       );
     }
 
@@ -795,116 +810,49 @@ export class EnumerationAreaService {
     const transaction = await this.enumerationAreaRepository.sequelize.transaction();
 
     try {
-      // Convert GeoJSON geometries to PostGIS format
-      const saz1GeomString = JSON.stringify(saz1Geometry);
-      const saz2GeomString = JSON.stringify(saz2Geometry);
-      const saz1GeomValue = Sequelize.fn('ST_GeomFromGeoJSON', saz1GeomString);
-      const saz2GeomValue = Sequelize.fn('ST_GeomFromGeoJSON', saz2GeomString);
+      // Convert GeoJSON geometries to PostGIS format and create SAZs
+      const createdSAZs: SubAdministrativeZone[] = [];
+      const escapedGeomStrings: string[] = [];
 
-      // Create SAZ1
-      const subAdministrativeZone1 =
-        await this.subAdministrativeZoneRepository.create(
-          {
-            administrativeZoneId: saz1Data.administrativeZoneId,
-            name: saz1Data.name,
-            areaCode: saz1Data.areaCode,
-            type: saz1Data.type.toLowerCase() as 'chiwog' | 'lap',
-            geom: saz1GeomValue,
-          },
-          { transaction },
-        );
+      for (const sazData of sazDataArray) {
+        const geomString = JSON.stringify(sazData.geometry);
+        const escapedGeom = geomString.replace(/'/g, "''");
+        escapedGeomStrings.push(escapedGeom);
+        const geomValue = Sequelize.fn('ST_GeomFromGeoJSON', geomString);
 
-      // Create SAZ2
-      const subAdministrativeZone2 =
-        await this.subAdministrativeZoneRepository.create(
-          {
-            administrativeZoneId: saz2Data.administrativeZoneId,
-            name: saz2Data.name,
-            areaCode: saz2Data.areaCode,
-            type: saz2Data.type.toLowerCase() as 'chiwog' | 'lap',
-            geom: saz2GeomValue,
-          },
-          { transaction },
-        );
-
-      // Combine geometries using ST_Union
-      // Escape single quotes in GeoJSON strings for SQL
-      const escapedSaz1Geom = saz1GeomString.replace(/'/g, "''");
-      const escapedSaz2Geom = saz2GeomString.replace(/'/g, "''");
-
-      // Check if EA with areaCode "01" already exists for this SAZ combination
-      // Use junction table query to avoid subAdministrativeZoneId column issues
-      const existingEAs = await this.junctionRepository.findAll({
-        where: {
-          subAdministrativeZoneId: {
-            [Op.in]: [subAdministrativeZone1.id, subAdministrativeZone2.id],
-          },
-        },
-        attributes: ['enumerationAreaId'],
-        transaction,
-      });
-
-      if (existingEAs.length > 0) {
-        // Get unique EA IDs
-        const eaIds = [...new Set(existingEAs.map((j) => j.enumerationAreaId))];
-
-        // Check if any of these EAs have areaCode "01" and are linked to both SAZs
-        for (const eaId of eaIds) {
-          const ea = await this.enumerationAreaRepository.findOne({
-            where: {
-              id: eaId,
-              areaCode: '01',
+        const subAdministrativeZone =
+          await this.subAdministrativeZoneRepository.create(
+            {
+              administrativeZoneId: sazData.administrativeZoneId,
+              name: sazData.name,
+              areaCode: sazData.areaCode,
+              type: sazData.type.toLowerCase() as 'chiwog' | 'lap',
+              geom: geomValue,
             },
-            attributes: { 
-              exclude: ['subAdministrativeZoneId'], // Explicitly exclude if column doesn't exist
-              include: ['id', 'areaCode'],
-            },
-            include: [
-              {
-                model: SubAdministrativeZone,
-                as: 'subAdministrativeZones',
-                attributes: ['id', 'areaCode'],
-                through: { attributes: [] },
-              },
-            ],
-            transaction,
-          });
+            { transaction },
+          );
 
-          if (ea) {
-            // Check if it has exactly these two SAZs
-            const linkedSAZIds = ea.subAdministrativeZones?.map((saz) => saz.id) || [];
-            const expectedIds = [subAdministrativeZone1.id, subAdministrativeZone2.id].sort();
-            const actualIds = linkedSAZIds.sort();
-
-            if (
-              expectedIds.length === actualIds.length &&
-              expectedIds.every((id, idx) => id === actualIds[idx])
-            ) {
-              await transaction.rollback();
-              throw new BadRequestException(
-                `EA with areaCode "01" already exists for SAZ combination (${subAdministrativeZone1.areaCode}, ${subAdministrativeZone2.areaCode})`,
-              );
-            }
-          }
-        }
+        createdSAZs.push(subAdministrativeZone);
       }
 
-      // Combine geometries using ST_Union
-      const combinedGeometry = Sequelize.literal(
-        `ST_Union(
-          ST_GeomFromGeoJSON('${escapedSaz1Geom}'),
-          ST_GeomFromGeoJSON('${escapedSaz2Geom}')
-        )`,
-      );
+      // Combine geometries using nested ST_Union
+      // Build nested ST_Union: ST_Union(ST_Union(ST_Union(geom1, geom2), geom3), ...)
+      let combinedGeometrySql = `ST_GeomFromGeoJSON('${escapedGeomStrings[0]}')`;
+      for (let i = 1; i < escapedGeomStrings.length; i++) {
+        combinedGeometrySql = `ST_Union(${combinedGeometrySql}, ST_GeomFromGeoJSON('${escapedGeomStrings[i]}'))`;
+      }
+
+      const combinedGeometry = Sequelize.literal(combinedGeometrySql);
 
       // Create EA with combined geometry
       // Use fields option to explicitly specify only the columns that exist
       // subAdministrativeZoneId is nullable and won't be set
+      const sazNames = sazDataArray.map((saz) => saz.name).join(', ');
       const enumerationArea = await this.enumerationAreaRepository.create(
         {
-          name: 'EA1',
-          areaCode: '01',
-          description: `EA for ${saz1Data.name} and ${saz2Data.name}`,
+          name: eaData.name,
+          areaCode: eaData.areaCode,
+          description: eaData.description || `EA for ${sazNames}`,
           geom: combinedGeometry,
           // subAdministrativeZoneId is not set - will remain null
         },
@@ -914,18 +862,12 @@ export class EnumerationAreaService {
         },
       );
 
-      // Link EA to both SAZs via junction table
+      // Link EA to all SAZs via junction table
       await this.junctionRepository.bulkCreate(
-        [
-          {
-            enumerationAreaId: enumerationArea.id,
-            subAdministrativeZoneId: subAdministrativeZone1.id,
-          },
-          {
-            enumerationAreaId: enumerationArea.id,
-            subAdministrativeZoneId: subAdministrativeZone2.id,
-          },
-        ],
+        createdSAZs.map((saz) => ({
+          enumerationAreaId: enumerationArea.id,
+          subAdministrativeZoneId: saz.id,
+        })),
         { transaction },
       );
 
@@ -940,8 +882,7 @@ export class EnumerationAreaService {
       );
 
       return {
-        subAdministrativeZone1,
-        subAdministrativeZone2,
+        subAdministrativeZones: createdSAZs,
         enumerationArea: eaWithSAZs,
       };
     } catch (error) {
