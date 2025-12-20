@@ -792,18 +792,73 @@ export class EnumerationAreaService {
       }
     }
 
-    // Validate EA areaCode is unique
-    const existingEa = await this.enumerationAreaRepository.findOne({
+    // Validate EA areaCode is unique within each SAZ being created
+    // EA areaCodes must be unique per SAZ (not globally unique)
+    // Check if any of the SAZs being created already exist, and if they have an EA with this areaCode
+    
+    // First, find existing SAZs that match the areaCodes being created
+    const sazAreaCodes = sazDataArray.map(saz => saz.areaCode);
+    const existingSAZs = await this.subAdministrativeZoneRepository.findAll({
       where: {
-        areaCode: eaData.areaCode,
-        isActive: true,
+        areaCode: { [Op.in]: sazAreaCodes },
+        administrativeZoneId: firstAdminZoneId,
       },
+      attributes: ['id', 'name', 'areaCode'],
     });
 
-    if (existingEa) {
-      throw new BadRequestException(
-        `EA with areaCode "${eaData.areaCode}" already exists`,
-      );
+    // If there are existing SAZs with matching areaCodes, check if any of them have an EA with the same areaCode
+    if (existingSAZs.length > 0) {
+      const existingSAZIds = existingSAZs.map(saz => saz.id);
+      
+      // Find EAs with the same areaCode that are linked to any of these existing SAZs
+      const conflictingEAs = await this.enumerationAreaRepository.findAll({
+        where: {
+          areaCode: eaData.areaCode,
+          isActive: true,
+        },
+        include: [
+          {
+            model: SubAdministrativeZone,
+            as: 'subAdministrativeZones',
+            through: { attributes: [] },
+            attributes: ['id', 'name', 'areaCode'],
+            where: {
+              id: { [Op.in]: existingSAZIds },
+            },
+            required: true,
+          },
+        ],
+      });
+
+      if (conflictingEAs.length > 0) {
+        // Build error message showing which SAZs already have an EA with this areaCode
+        const conflictingSAZs = conflictingEAs.flatMap(ea => 
+          ea.subAdministrativeZones?.map(saz => ({
+            id: saz.id,
+            name: saz.name,
+            areaCode: saz.areaCode,
+            eaId: ea.id,
+            eaName: ea.name,
+          })) || []
+        );
+        
+        // Group by SAZ to show which ones conflict (remove duplicates)
+        const sazConflictMap = new Map();
+        conflictingSAZs.forEach(item => {
+          if (!sazConflictMap.has(item.id)) {
+            sazConflictMap.set(item.id, item);
+          }
+        });
+
+        // Create a clear error message
+        const conflictList = Array.from(sazConflictMap.values())
+          .map(saz => `SAZ "${saz.name}" (areaCode: ${saz.areaCode}) already has EA "${saz.eaName}" (ID: ${saz.eaId}) with areaCode "${eaData.areaCode}"`)
+          .join('. ');
+
+        throw new BadRequestException(
+          `EA with areaCode "${eaData.areaCode}" already exists in one or more of the specified SAZs. ${conflictList}. EA areaCodes must be unique within each SAZ.`,
+        );
+      }
     }
 
     // Use transaction for rollback on any failure

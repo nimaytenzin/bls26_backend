@@ -43,7 +43,7 @@ The `eaData` should be a JSON string containing:
 ```typescript
 {
   name: string;                      // EA name (required)
-  areaCode: string;                  // EA area code (required, must be unique)
+  areaCode: string;                  // EA area code (required, must be unique within each SAZ)
   description?: string;               // EA description (optional)
 }
 ```
@@ -119,7 +119,7 @@ Common error messages:
 - `"SAZ X data missing required fields: name, areaCode, type, administrativeZoneId"`
 - `"All SAZs must belong to the same Administrative Zone"`
 - `"SAZ X with areaCode 'XXX' already exists in Administrative Zone Y"`
-- `"EA with areaCode 'XXX' already exists"`
+- `"EA with areaCode 'XXX' already exists in one or more of the specified SAZs. EA areaCodes must be unique within each SAZ."`
 - `"File X GeoJSON: Invalid format. Must be a Feature, FeatureCollection, or Geometry object."`
 
 #### 404 Not Found
@@ -618,7 +618,7 @@ export class ExampleComponent {
 ### 2. **Validation Rules**
 - All SAZs must have the same `administrativeZoneId`
 - SAZ `areaCode` must be unique within the same `administrativeZoneId`
-- EA `areaCode` must be unique (check against existing active EAs)
+- EA `areaCode` must be unique within each SAZ (different SAZs can have EAs with the same areaCode)
 - Minimum 2 SAZs required, maximum 20 SAZs allowed
 - Number of files must exactly match number of SAZs in array
 - Files must be in the same order as SAZ data array
