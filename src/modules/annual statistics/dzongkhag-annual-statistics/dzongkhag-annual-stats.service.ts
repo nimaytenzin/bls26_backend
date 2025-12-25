@@ -20,6 +20,7 @@ import { EnumerationArea } from '../../location/enumeration-area/entities/enumer
 import { EAAnnualStats } from '../ea-annual-statistics/entities/ea-annual-stats.entity';
 import { SAZAnnualStatsService } from '../sub-administrative-zone-annual-statistics/saz-annual-stats.service';
 import { AZAnnualStatsService } from '../administrative-zone-annual-statistics/az-annual-stats.service';
+import { EAAnnualStatsService } from '../ea-annual-statistics/ea-annual-stats.service';
 import { Cron } from '@nestjs/schedule';
 import { SurveyEnumerationArea } from '../../survey/survey-enumeration-area/entities/survey-enumeration-area.entity';
 import { SurveyEnumerationAreaHouseholdListing } from '../../survey/survey-enumeration-area-household-listing/entities/survey-enumeration-area-household-listing.entity';
@@ -33,6 +34,7 @@ export class DzongkhagAnnualStatsService {
     private readonly dzongkhagAnnualStatsRepository: typeof DzongkhagAnnualStats,
     private readonly sazAnnualStatsService: SAZAnnualStatsService,
     private readonly azAnnualStatsService: AZAnnualStatsService,
+    private readonly eaAnnualStatsService: EAAnnualStatsService,
   ) {}
 
   async findAll(year?: number): Promise<DzongkhagAnnualStats[]> {
@@ -243,32 +245,46 @@ export class DzongkhagAnnualStatsService {
               dzRuralEACount++;
             }
 
-            // Step 6: Get latest published survey data (skip EAAnnualStats)
+            // Step 6: Get latest published survey data and create EA Annual Stats
             const latestPublishedSurveyEA = await SurveyEnumerationArea.findOne({
               where: { enumerationAreaId: ea.id, isPublished: true },
               order: [['publishedDate', 'DESC']],
             });
 
+            let householdsCount = 0;
+            let totalMale = 0;
+            let totalFemale = 0;
+
             if (latestPublishedSurveyEA) {
-              const householdsCount =
+              householdsCount =
                 (await SurveyEnumerationAreaHouseholdListing.count({
                   where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
                 })) || 0;
-              const totalMale =
+              totalMale =
                 (await SurveyEnumerationAreaHouseholdListing.sum('totalMale', {
                   where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
                 })) || 0;
-              const totalFemale =
+              totalFemale =
                 (await SurveyEnumerationAreaHouseholdListing.sum('totalFemale', {
                   where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
                 })) || 0;
+            }
 
-              if (householdsCount > 0 || totalMale > 0 || totalFemale > 0) {
-                eaCount++;
-                sazTotalHouseholds += householdsCount;
-                sazTotalMale += totalMale;
-                sazTotalFemale += totalFemale;
-              }
+            // Create/Update EA Annual Stats record (always create entry even with zero values)
+            await this.eaAnnualStatsService.create({
+              enumerationAreaId: ea.id,
+              year,
+              totalHouseholds: householdsCount,
+              totalMale,
+              totalFemale,
+            });
+
+            // Aggregate to SAZ level if there's data
+            if (householdsCount > 0 || totalMale > 0 || totalFemale > 0) {
+              eaCount++;
+              sazTotalHouseholds += householdsCount;
+              sazTotalMale += totalMale;
+              sazTotalFemale += totalFemale;
             }
           }
 
@@ -483,32 +499,46 @@ export class DzongkhagAnnualStatsService {
               dzRuralEACount++;
             }
 
-            // Step 6: Get latest published survey data (skip EAAnnualStats)
+            // Step 6: Get latest published survey data and create EA Annual Stats
             const latestPublishedSurveyEA = await SurveyEnumerationArea.findOne({
               where: { enumerationAreaId: ea.id, isPublished: true },
               order: [['publishedDate', 'DESC']],
             });
 
+            let householdsCount = 0;
+            let totalMale = 0;
+            let totalFemale = 0;
+
             if (latestPublishedSurveyEA) {
-              const householdsCount =
+              householdsCount =
                 (await SurveyEnumerationAreaHouseholdListing.count({
                   where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
                 })) || 0;
-              const totalMale =
+              totalMale =
                 (await SurveyEnumerationAreaHouseholdListing.sum('totalMale', {
                   where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
                 })) || 0;
-              const totalFemale =
+              totalFemale =
                 (await SurveyEnumerationAreaHouseholdListing.sum('totalFemale', {
                   where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
                 })) || 0;
+            }
 
-              if (householdsCount > 0 || totalMale > 0 || totalFemale > 0) {
-                eaCount++;
-                sazTotalHouseholds += householdsCount;
-                sazTotalMale += totalMale;
-                sazTotalFemale += totalFemale;
-              }
+            // Create/Update EA Annual Stats record (always create entry even with zero values)
+            await this.eaAnnualStatsService.create({
+              enumerationAreaId: ea.id,
+              year,
+              totalHouseholds: householdsCount,
+              totalMale,
+              totalFemale,
+            });
+
+            // Aggregate to SAZ level if there's data
+            if (householdsCount > 0 || totalMale > 0 || totalFemale > 0) {
+              eaCount++;
+              sazTotalHouseholds += householdsCount;
+              sazTotalMale += totalMale;
+              sazTotalFemale += totalFemale;
             }
           }
 
