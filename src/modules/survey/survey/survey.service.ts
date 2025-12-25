@@ -1247,51 +1247,105 @@ export class SurveyService {
     subAdminZoneCode: string,
     eaCode: string,
   ): Promise<number | null> {
-    const dz = await Dzongkhag.findOne({
-      where: { areaCode: { [Op.or]: this.codeVariants(dzongkhagCode) } },
+    console.log('[EA Lookup] Starting lookup with codes:', {
+      dzongkhagCode,
+      adminZoneCode,
+      subAdminZoneCode,
+      eaCode,
     });
-    if (!dz) return null;
+
+    const dzCodeVariants = this.codeVariants(dzongkhagCode);
+    console.log('[EA Lookup] Dzongkhag code variants:', dzCodeVariants);
+
+    const dz = await Dzongkhag.findOne({
+      where: { areaCode: { [Op.or]: dzCodeVariants } },
+    });
+    if (!dz) {
+      console.log('[EA Lookup] ❌ Dzongkhag not found with code:', dzongkhagCode, 'variants:', dzCodeVariants);
+      return null;
+    }
+    console.log('[EA Lookup] ✓ Dzongkhag found:', dz.id, dz.name, dz.areaCode);
+
+    const azCodeVariants = this.codeVariants(adminZoneCode);
+    console.log('[EA Lookup] Admin Zone code variants:', azCodeVariants);
 
     const az = await AdministrativeZone.findOne({
       where: {
         dzongkhagId: dz.id,
-        areaCode: { [Op.or]: this.codeVariants(adminZoneCode) },
+        areaCode: { [Op.or]: azCodeVariants },
       },
     });
-    if (!az) return null;
+    if (!az) {
+      console.log('[EA Lookup] ❌ Admin Zone not found with code:', adminZoneCode, 'in Dzongkhag:', dz.id);
+      return null;
+    }
+    console.log('[EA Lookup] ✓ Admin Zone found:', az.id, az.name, az.areaCode);
+
+    const sazCodeVariants = this.codeVariants(subAdminZoneCode);
+    console.log('[EA Lookup] Sub Admin Zone code variants:', sazCodeVariants);
 
     const saz = await SubAdministrativeZone.findOne({
       where: {
         administrativeZoneId: az.id,
-        areaCode: { [Op.or]: this.codeVariants(subAdminZoneCode) },
+        areaCode: { [Op.or]: sazCodeVariants },
       },
     });
-    if (!saz) return null;
+    if (!saz) {
+      console.log('[EA Lookup] ❌ Sub Admin Zone not found with code:', subAdminZoneCode, 'in Admin Zone:', az.id);
+      return null;
+    }
+    console.log('[EA Lookup] ✓ Sub Admin Zone found:', saz.id, saz.name, saz.areaCode);
 
     // First, get all EA IDs linked to this SAZ via junction table
+    console.log('[EA Lookup] Querying junction table for SAZ ID:', saz.id);
     const junctionEntries = await EnumerationAreaSubAdministrativeZone.findAll({
       where: { subAdministrativeZoneId: saz.id },
       attributes: ['enumerationAreaId'],
       raw: true,
     });
 
+    console.log('[EA Lookup] Junction table entries found:', junctionEntries.length);
     if (junctionEntries.length === 0) {
+      console.log('[EA Lookup] ❌ No EAs linked to SAZ', saz.id, 'via junction table');
       return null;
     }
 
     const eaIds = junctionEntries.map((entry) => entry.enumerationAreaId);
+    console.log('[EA Lookup] EA IDs from junction table:', eaIds);
+
+    const eaCodeVariants = this.codeVariants(eaCode);
+    console.log('[EA Lookup] EA code variants:', eaCodeVariants);
 
     // Now find EA by areaCode that exists in the junction table
     const ea = await EnumerationArea.findOne({
       where: {
-        areaCode: { [Op.or]: this.codeVariants(eaCode) },
+        areaCode: { [Op.or]: eaCodeVariants },
         isActive: true,
         id: { [Op.in]: eaIds },
       },
     });
 
-    if (!ea) return null;
+    if (!ea) {
+      console.log('[EA Lookup] ❌ Enumeration Area not found with code:', eaCode, 'variants:', eaCodeVariants, 'in junction table EA IDs:', eaIds);
+      // Additional debug: check if EA exists with the code but not in junction table
+      const eaWithoutJunction = await EnumerationArea.findOne({
+        where: {
+          areaCode: { [Op.or]: eaCodeVariants },
+          isActive: true,
+        },
+      });
+      if (eaWithoutJunction) {
+        console.log('[EA Lookup] ⚠️ EA exists with code but NOT in junction table:', {
+          eaId: eaWithoutJunction.id,
+          areaCode: eaWithoutJunction.areaCode,
+          isActive: eaWithoutJunction.isActive,
+          subAdministrativeZoneId: eaWithoutJunction.subAdministrativeZoneId,
+        });
+      }
+      return null;
+    }
 
+    console.log('[EA Lookup] ✓ Enumeration Area found:', ea.id, ea.name, ea.areaCode);
     return ea.id;
   }
 

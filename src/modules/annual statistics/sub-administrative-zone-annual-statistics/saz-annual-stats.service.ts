@@ -14,6 +14,7 @@ import {
   DzongkhagSAZSummary,
 } from './dto/saz-stats-geojson.dto';
 import { Sequelize } from 'sequelize-typescript';
+import { Op } from 'sequelize';
 
 @Injectable()
 export class SAZAnnualStatsService {
@@ -158,7 +159,7 @@ export class SAZAnnualStatsService {
     const sazIds = subAdministrativeZones.map((saz) => saz.id);
     const annualStats = await this.sazAnnualStatsRepository.findAll({
       where: {
-        subAdministrativeZoneId: sazIds,
+        subAdministrativeZoneId: { [Op.in]: sazIds },
         year: statsYear,
       },
     });
@@ -328,7 +329,7 @@ export class SAZAnnualStatsService {
     const sazIds = subAdministrativeZones.map((saz) => saz.id);
     const annualStats = await this.sazAnnualStatsRepository.findAll({
       where: {
-        subAdministrativeZoneId: sazIds,
+        subAdministrativeZoneId: { [Op.in]: sazIds },
         year: statsYear,
       },
     });
