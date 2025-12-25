@@ -23,6 +23,7 @@ import { SamplingModule } from './modules/sampling/sampling.module';
 import { LocationDownloadModule } from './modules/location/location-download/location-download.module';
 import { PublicApiModule } from './modules/public-api/public-api.module';
 import { AnnualStatisticsDownloadModule } from './modules/annual statistics/annual-statistics-download/annual-statistics-download.module';
+import { PublicPageSettingsModule } from './modules/public-page-settings/public-page-settings.module';
 import { EnumerationAreaSubAdministrativeZone } from './modules/location/enumeration-area/entities/enumeration-area-sub-administrative-zone.entity';
 import { EnumerationAreaLineage } from './modules/location/enumeration-area/entities/enumeration-area-lineage.entity';
 
@@ -51,6 +52,7 @@ import { EnumerationAreaLineage } from './modules/location/enumeration-area/enti
     LocationDownloadModule,
     PublicApiModule,
     AnnualStatisticsDownloadModule,
+    PublicPageSettingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

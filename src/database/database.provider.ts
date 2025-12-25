@@ -27,6 +27,7 @@ import { SurveyEnumerationAreaHouseholdSample } from 'src/modules/sampling/entit
 import { SurveyEnumerationAreaStructure } from 'src/modules/survey/survey-enumeration-area-structure/entities/survey-enumeration-area-structure.entity';
 import { EnumerationAreaSubAdministrativeZone } from 'src/modules/location/enumeration-area/entities/enumeration-area-sub-administrative-zone.entity';
 import { EnumerationAreaLineage } from 'src/modules/location/enumeration-area/entities/enumeration-area-lineage.entity';
+import { PublicPageSettings } from 'src/modules/public-page-settings/entities/public-page-settings.entity';
 
 export const databaseProviders = [
   {
@@ -96,6 +97,7 @@ export const databaseProviders = [
         SurveySamplingConfig,
         SurveyEnumerationAreaSampling,
         SurveyEnumerationAreaHouseholdSample,
+        PublicPageSettings,
       ]);
 
       await sequelize.sync();
