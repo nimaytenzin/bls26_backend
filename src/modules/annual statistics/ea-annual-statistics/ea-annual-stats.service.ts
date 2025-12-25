@@ -24,6 +24,12 @@ import { DzongkhagAnnualStatsService } from '../dzongkhag-annual-statistics/dzon
 import { Sequelize } from 'sequelize-typescript';
 import { QueryTypes } from 'sequelize';
 import { Op } from 'sequelize';
+import {
+  EABySubAdministrativeZoneGeoJsonResponse,
+  EAStatsFeature,
+  EAStatsProperties,
+  SubAdministrativeZoneEASummary,
+} from './dto/ea-stats-geojson.dto';
 
 @Injectable()
 export class EAAnnualStatsService {
@@ -497,5 +503,287 @@ export class EAAnnualStatsService {
     this.logger.log(
       `Hierarchy aggregation completed in ${hierarchyExecutionTime}ms`,
     );
+  }
+
+  /**
+   * Get all EAs for a specific Sub-Administrative Zone with annual statistics as GeoJSON
+   * @param subAdministrativeZoneId - ID of the Sub-Administrative Zone to filter by
+   * @returns GeoJSON FeatureCollection with statistics embedded in properties
+   */
+  async getCurrentEAStatsBySubAdministrativeZoneAsGeoJson(
+    subAdministrativeZoneId: number,
+  ): Promise<EABySubAdministrativeZoneGeoJsonResponse> {
+    const statsYear = new Date().getFullYear();
+
+    // Fetch all EAs for the specified SAZ with geometry
+    // EAs can be linked via direct subAdministrativeZoneId or through junction table
+    // First, get EAs with direct subAdministrativeZoneId
+    const directEAs = await EnumerationArea.findAll({
+      where: {
+        isActive: true,
+        subAdministrativeZoneId,
+      },
+      attributes: [
+        'id',
+        'name',
+        'description',
+        'areaCode',
+        'subAdministrativeZoneId',
+        [
+          Sequelize.fn(
+            'ST_AsGeoJSON',
+            Sequelize.col('EnumerationArea.geom'),
+          ),
+          'geomGeoJSON',
+        ],
+      ],
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',
+          through: { attributes: [] },
+          required: false,
+          attributes: ['id', 'name', 'type'],
+          include: [
+            {
+              model: AdministrativeZone,
+              as: 'administrativeZone',
+              required: true,
+              attributes: ['id', 'name', 'type', 'dzongkhagId'],
+              include: [
+                {
+                  model: Dzongkhag,
+                  as: 'dzongkhag',
+                  attributes: ['id', 'name'],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      raw: false,
+    });
+
+    // Get EAs linked through junction table
+    const junctionEAs = await EnumerationArea.findAll({
+      where: { isActive: true },
+      attributes: [
+        'id',
+        'name',
+        'description',
+        'areaCode',
+        'subAdministrativeZoneId',
+        [
+          Sequelize.fn(
+            'ST_AsGeoJSON',
+            Sequelize.col('EnumerationArea.geom'),
+          ),
+          'geomGeoJSON',
+        ],
+      ],
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',
+          through: { attributes: [] },
+          where: { id: subAdministrativeZoneId },
+          required: true,
+          attributes: ['id', 'name', 'type'],
+          include: [
+            {
+              model: AdministrativeZone,
+              as: 'administrativeZone',
+              required: true,
+              attributes: ['id', 'name', 'type', 'dzongkhagId'],
+              include: [
+                {
+                  model: Dzongkhag,
+                  as: 'dzongkhag',
+                  attributes: ['id', 'name'],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      raw: false,
+    });
+
+    // Combine and deduplicate by EA ID
+    const eaMap = new Map<number, any>();
+    [...directEAs, ...junctionEAs].forEach((ea) => {
+      if (!eaMap.has(ea.id)) {
+        eaMap.set(ea.id, ea);
+      }
+    });
+    const enumerationAreas = Array.from(eaMap.values());
+
+    if (enumerationAreas.length === 0) {
+      throw new NotFoundException(
+        `No Enumeration Areas found for Sub-Administrative Zone ID ${subAdministrativeZoneId}`,
+      );
+    }
+
+    // Get SAZ information
+    const saz = await SubAdministrativeZone.findByPk(subAdministrativeZoneId, {
+      include: [
+        {
+          model: AdministrativeZone,
+          as: 'administrativeZone',
+          attributes: ['id', 'name', 'type', 'dzongkhagId'],
+          include: [
+            {
+              model: Dzongkhag,
+              as: 'dzongkhag',
+              attributes: ['id', 'name'],
+            },
+          ],
+        },
+      ],
+    });
+
+    if (!saz) {
+      throw new NotFoundException(
+        `Sub-Administrative Zone with ID ${subAdministrativeZoneId} not found`,
+      );
+    }
+
+    const sazName = saz.name || 'Unknown';
+    const sazType = saz.type || null;
+    const administrativeZone = (saz as any).administrativeZone;
+    const administrativeZoneId = administrativeZone?.id || 0;
+    const administrativeZoneName = administrativeZone?.name || 'Unknown';
+    const administrativeZoneType = administrativeZone?.type || 'Gewog';
+    const dzongkhagId = administrativeZone?.dzongkhagId || 0;
+    const dzongkhagName = administrativeZone?.dzongkhag?.name || 'Unknown';
+
+    // Fetch annual statistics for all EAs
+    const eaIds = enumerationAreas.map((ea) => ea.id);
+    const annualStats = await this.eaAnnualStatsRepository.findAll({
+      where: {
+        enumerationAreaId: { [Op.in]: eaIds },
+        year: statsYear,
+      },
+    });
+
+    // Create stats map
+    const statsMap = new Map<number, EAAnnualStats>();
+    annualStats.forEach((stat) => {
+      statsMap.set(stat.enumerationAreaId, stat);
+    });
+
+    // Initialize summary
+    let totalPopulation = 0;
+    let totalHouseholds = 0;
+    let totalMale = 0;
+    let totalFemale = 0;
+
+    // Build GeoJSON features
+    const features: EAStatsFeature[] = enumerationAreas.map((ea) => {
+      const stats = statsMap.get(ea.id);
+      const hasData = !!stats;
+
+      const geomData = (ea as any).dataValues.geomGeoJSON;
+      const geometry = geomData ? JSON.parse(geomData) : null;
+
+      // Get SAZ info (use matching SAZ or first from junction table)
+      const matchingSAZ = (ea as any).subAdministrativeZones?.find(
+        (s: any) => s.id === subAdministrativeZoneId,
+      );
+      const subAdministrativeZoneIdFinal =
+        matchingSAZ?.id || ea.subAdministrativeZoneId || subAdministrativeZoneId;
+      const subAdministrativeZoneName =
+        matchingSAZ?.name || sazName || null;
+      const subAdministrativeZoneType =
+        matchingSAZ?.type || sazType || null;
+
+      const male = stats?.totalMale || 0;
+      const female = stats?.totalFemale || 0;
+      const population = male + female;
+      const households = stats?.totalHouseholds || 0;
+
+      // Calculate metrics
+      const averageHouseholdSize = households > 0 ? population / households : 0;
+      const genderRatio = female > 0 ? (male / female) * 100 : 0;
+      const malePercentage = population > 0 ? (male / population) * 100 : 0;
+      const femalePercentage = population > 0 ? (female / population) * 100 : 0;
+
+      // Accumulate summary
+      totalPopulation += population;
+      totalHouseholds += households;
+      totalMale += male;
+      totalFemale += female;
+
+      const properties: EAStatsProperties = {
+        id: ea.id,
+        name: ea.name,
+        areaCode: ea.areaCode,
+        description: ea.description,
+        subAdministrativeZoneId: subAdministrativeZoneIdFinal,
+        subAdministrativeZoneName: subAdministrativeZoneName,
+        subAdministrativeZoneType: subAdministrativeZoneType,
+        administrativeZoneId,
+        administrativeZoneName,
+        administrativeZoneType,
+        dzongkhagId,
+        dzongkhagName,
+        year: statsYear,
+        totalHouseholds: households,
+        totalPopulation: population,
+        totalMale: male,
+        totalFemale: female,
+        averageHouseholdSize: Math.round(averageHouseholdSize * 100) / 100,
+        genderRatio: Math.round(genderRatio * 100) / 100,
+        malePercentage: Math.round(malePercentage * 100) / 100,
+        femalePercentage: Math.round(femalePercentage * 100) / 100,
+        hasData,
+        lastUpdated: stats?.updatedAt
+          ? stats.updatedAt.toISOString()
+          : new Date().toISOString(),
+      };
+
+      return {
+        type: 'Feature',
+        id: ea.id,
+        geometry,
+        properties,
+      };
+    });
+
+    // Build summary
+    const summary: SubAdministrativeZoneEASummary = {
+      subAdministrativeZoneId,
+      subAdministrativeZoneName: sazName,
+      subAdministrativeZoneType: sazType,
+      administrativeZoneId,
+      administrativeZoneName,
+      administrativeZoneType,
+      dzongkhagId,
+      dzongkhagName,
+      year: statsYear,
+      totalEAs: enumerationAreas.length,
+      totalPopulation,
+      totalHouseholds,
+      totalMale,
+      totalFemale,
+    };
+
+    return {
+      type: 'FeatureCollection',
+      metadata: {
+        year: statsYear,
+        subAdministrativeZoneId,
+        subAdministrativeZoneName: sazName,
+        subAdministrativeZoneType: sazType,
+        administrativeZoneId,
+        administrativeZoneName,
+        administrativeZoneType,
+        dzongkhagId,
+        dzongkhagName,
+        generatedAt: new Date().toISOString(),
+        summary,
+      },
+      features,
+    };
   }
 }

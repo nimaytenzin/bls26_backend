@@ -22,6 +22,7 @@ import {
   AggregatedStatsResponseDto,
   PaginatedEAAnnualStatsResponseDto,
 } from './dto/ea-annual-stats-query.dto';
+import { EABySubAdministrativeZoneGeoJsonResponse } from './dto/ea-stats-geojson.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -31,6 +32,28 @@ import { EAAnnualStats } from './entities/ea-annual-stats.entity';
 @Controller('ea-annual-stats')
 export class EAAnnualStatsController {
   constructor(private readonly eaAnnualStatsService: EAAnnualStatsService) {}
+
+  /**
+   * Get all EAs for a specific Sub-Administrative Zone with annual statistics as GeoJSON
+   * Combines geographic boundaries with demographic statistics
+   * Perfect for map visualization and choropleth maps
+   *
+   * @access Public
+   * @param subAdministrativeZoneId - ID of the Sub-Administrative Zone to filter by
+   *
+   * @example
+   * GET /ea-annual-stats/all/geojson&stats/current&bysubadministrativezone/1
+   *
+   * @returns GeoJSON FeatureCollection with statistics embedded in properties
+   */
+  @Get('all/geojson&stats/current&bysubadministrativezone/:subAdministrativeZoneId')
+  async getCurrentEAStatsBySubAdministrativeZoneAsGeoJson(
+    @Param('subAdministrativeZoneId', ParseIntPipe) subAdministrativeZoneId: number,
+  ): Promise<EABySubAdministrativeZoneGeoJsonResponse> {
+    return this.eaAnnualStatsService.getCurrentEAStatsBySubAdministrativeZoneAsGeoJson(
+      subAdministrativeZoneId,
+    );
+  }
 
   /**
    * GET /ea-annual-stats/history/:enumerationAreaId
