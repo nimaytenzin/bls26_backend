@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { EAAnnualStatsController } from './ea-annual-stats.controller';
 import { EAAnnualStatsService } from './ea-annual-stats.service';
@@ -14,7 +14,7 @@ import { DzongkhagAnnualStatsModule } from '../dzongkhag-annual-statistics/dzong
     ScheduleModule.forRoot(),
     SAZAnnualStatsModule,
     AZAnnualStatsModule,
-    DzongkhagAnnualStatsModule,
+    forwardRef(() => DzongkhagAnnualStatsModule),
   ],
   controllers: [EAAnnualStatsController],
   providers: [EAAnnualStatsService, ...eaAnnualStatsProviders],

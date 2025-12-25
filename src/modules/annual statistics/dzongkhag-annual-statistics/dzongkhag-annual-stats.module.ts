@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { DzongkhagAnnualStatsController } from './dzongkhag-annual-stats.controller';
 import { DzongkhagAnnualStatsService } from './dzongkhag-annual-stats.service';
 import { dzongkhagAnnualStatsProviders } from './dzongkhag-annual-stats.provider';
@@ -8,7 +8,12 @@ import { AZAnnualStatsModule } from '../administrative-zone-annual-statistics/az
 import { EAAnnualStatsModule } from '../ea-annual-statistics/ea-annual-stats.module';
 
 @Module({
-  imports: [DatabaseModule, SAZAnnualStatsModule, AZAnnualStatsModule, EAAnnualStatsModule],
+  imports: [
+    DatabaseModule,
+    SAZAnnualStatsModule,
+    AZAnnualStatsModule,
+    forwardRef(() => EAAnnualStatsModule),
+  ],
   controllers: [DzongkhagAnnualStatsController],
   providers: [DzongkhagAnnualStatsService, ...dzongkhagAnnualStatsProviders],
   exports: [DzongkhagAnnualStatsService],

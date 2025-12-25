@@ -1,4 +1,4 @@
-import { Injectable, Inject, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, Logger, forwardRef } from '@nestjs/common';
 import { DzongkhagAnnualStats } from './entities/dzongkhag-annual-stats.entity';
 import { CreateDzongkhagAnnualStatsDto } from './dto/create-dzongkhag-annual-stats.dto';
 import { UpdateDzongkhagAnnualStatsDto } from './dto/update-dzongkhag-annual-stats.dto';
@@ -34,6 +34,7 @@ export class DzongkhagAnnualStatsService {
     private readonly dzongkhagAnnualStatsRepository: typeof DzongkhagAnnualStats,
     private readonly sazAnnualStatsService: SAZAnnualStatsService,
     private readonly azAnnualStatsService: AZAnnualStatsService,
+    @Inject(forwardRef(() => EAAnnualStatsService))
     private readonly eaAnnualStatsService: EAAnnualStatsService,
   ) {}
 
