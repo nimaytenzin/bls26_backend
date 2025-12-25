@@ -5,6 +5,7 @@ import { SurveyStatisticsResponseDto } from './dto/survey-statistics-response.dt
 import { SurveyEnumerationHierarchyDto } from './dto/survey-enumeration-hierarchy-response.dto';
 import { Survey, SurveyStatus } from './entities/survey.entity';
 import { EnumerationArea } from '../../location/enumeration-area/entities/enumeration-area.entity';
+import { EnumerationAreaSubAdministrativeZone } from '../../location/enumeration-area/entities/enumeration-area-sub-administrative-zone.entity';
 import { SubAdministrativeZone } from '../../location/sub-administrative-zone/entities/sub-administrative-zone.entity';
 import { AdministrativeZone } from '../../location/administrative-zone/entities/administrative-zone.entity';
 import { Dzongkhag } from '../../location/dzongkhag/entities/dzongkhag.entity';
@@ -1267,22 +1268,28 @@ export class SurveyService {
     });
     if (!saz) return null;
 
-    // Find EA by areaCode and check if it's linked to this SAZ via junction table
-    // Only get active EAs (not survey-linked, so filter by isActive)
+    // First, get all EA IDs linked to this SAZ via junction table
+    const junctionEntries = await EnumerationAreaSubAdministrativeZone.findAll({
+      where: { subAdministrativeZoneId: saz.id },
+      attributes: ['enumerationAreaId'],
+      raw: true,
+    });
+
+    if (junctionEntries.length === 0) {
+      return null;
+    }
+
+    const eaIds = junctionEntries.map((entry) => entry.enumerationAreaId);
+
+    // Now find EA by areaCode that exists in the junction table
     const ea = await EnumerationArea.findOne({
       where: {
         areaCode: { [Op.or]: this.codeVariants(eaCode) },
         isActive: true,
+        id: { [Op.in]: eaIds },
       },
-      include: [
-        {
-          model: SubAdministrativeZone,
-          as: 'subAdministrativeZones',  // Via junction table
-          where: { id: saz.id },
-          through: { attributes: [] },
-        },
-      ],
     });
+
     if (!ea) return null;
 
     return ea.id;
