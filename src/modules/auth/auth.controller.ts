@@ -11,6 +11,7 @@ import {
   Patch,
   Delete,
   Query,
+  ForbiddenException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -18,6 +19,8 @@ import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { AdminResetPasswordDto } from './dto/admin-reset-password.dto';
 import { AssignDzongkhagDto } from './dto/assign-dzongkhag.dto';
 import { UserRole } from './entities/user.entity';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -37,6 +40,12 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(forgotPasswordDto);
   }
 
   @Post('reset-password')
@@ -59,6 +68,21 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async getProfile(@Request() req) {
     return this.authService.getUserById(req.user.id);
+  }
+
+  /**
+   * Update own profile
+   * @access Protected - All authenticated users
+   * @route PATCH /auth/profile
+   */
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async updateOwnProfile(
+    @Request() req,
+    @Body() updateProfileDto: UpdateProfileDto,
+  ) {
+    return this.authService.updateOwnProfile(req.user.id, updateProfileDto);
   }
 
   @Post('signout')
@@ -116,6 +140,17 @@ export class AuthController {
   }
 
   /**
+   * Get all admins (Admin only)
+   * @access Protected - Admin only
+   */
+  @Get('admins')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async getAllAdmins() {
+    return this.authService.getUsersByRole(UserRole.ADMIN);
+  }
+
+  /**
    * Get all enumerators (Admin/Supervisor only)
    * @access Protected - Admin, Supervisor
    */
@@ -124,6 +159,34 @@ export class AuthController {
   @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
   async getAllEnumerators() {
     return this.authService.getUsersByRole(UserRole.ENUMERATOR);
+  }
+
+  /**
+   * Create a new admin (Admin only)
+   * @access Protected - Admin only
+   */
+  @Post('admins')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async createAdmin(@Body() registerDto: RegisterDto) {
+    return this.authService.createUserWithRole(
+      registerDto,
+      UserRole.ADMIN,
+    );
+  }
+
+  /**
+   * Create a new admin (Alternative endpoint for signup)
+   * @access Protected - Admin only
+   */
+  @Post('admin/signup')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminSignup(@Body() registerDto: RegisterDto) {
+    return this.authService.createUserWithRole(
+      registerDto,
+      UserRole.ADMIN,
+    );
   }
 
   /**
@@ -166,6 +229,33 @@ export class AuthController {
   }
 
   /**
+   * Get comprehensive user profile with all assignments
+   * Returns user details with role-specific data:
+   * - Supervisors: includes dzongkhag assignments
+   * - Enumerators: includes survey assignments (all and active)
+   * - Admins: basic profile only
+   * @access Protected - Admin, Supervisor, Enumerator (own profile)
+   */
+  @Get('users/:id/profile')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ENUMERATOR)
+  async getUserProfileWithAssignments(
+    @Param('id') id: string,
+    @Request() req,
+  ) {
+    const userId = +id;
+    const requestorId = req.user.id;
+    const requestorRole = req.user.role;
+
+    // Enumerators can only view their own profile
+    if (requestorRole === UserRole.ENUMERATOR && userId !== requestorId) {
+      throw new ForbiddenException('You can only view your own profile');
+    }
+
+    return this.authService.getUserProfileWithAssignments(userId);
+  }
+
+  /**
    * Update user (Admin only, or Supervisor for Enumerators)
    * @access Protected - Admin, Supervisor (limited)
    */
@@ -178,6 +268,42 @@ export class AuthController {
     @Request() req,
   ) {
     return this.authService.updateUser(+id, updateData, req.user.role);
+  }
+
+  /**
+   * Admin reset password for any user
+   * @access Protected - Admin only
+   */
+  @Patch('users/:id/reset-password')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async adminResetPassword(
+    @Param('id') id: string,
+    @Body() adminResetPasswordDto: AdminResetPasswordDto,
+  ) {
+    return this.authService.adminResetPassword(
+      +id,
+      adminResetPasswordDto.newPassword,
+    );
+  }
+
+  /**
+   * Admin reset password for any user (alternative route)
+   * @access Protected - Admin only
+   */
+  @Patch('admin/users/:id/reset-password')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async adminResetPasswordAlt(
+    @Param('id') id: string,
+    @Body() adminResetPasswordDto: AdminResetPasswordDto,
+  ) {
+    return this.authService.adminResetPassword(
+      +id,
+      adminResetPasswordDto.newPassword,
+    );
   }
 
   /**

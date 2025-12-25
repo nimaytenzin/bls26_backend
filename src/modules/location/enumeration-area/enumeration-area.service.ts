@@ -1083,10 +1083,18 @@ export class EnumerationAreaService {
 
     try {
       // Validate all source EAs exist and are active
+      // Load source EAs WITH their SAZ relationships to collect all SAZ IDs
       const sourceEAs = await this.enumerationAreaRepository.findAll({
         where: {
           id: { [Op.in]: sourceEaIds },
         },
+        include: [
+          {
+            model: SubAdministrativeZone,
+            as: 'subAdministrativeZones',
+            through: { attributes: [] },
+          },
+        ],
         transaction,
       });
 
@@ -1105,6 +1113,19 @@ export class EnumerationAreaService {
           `Cannot merge inactive enumeration areas: ${inactiveEAs.map((ea) => ea.id).join(', ')}`,
         );
       }
+
+      // Collect all unique SAZ IDs from all source EAs
+      const sourceSazIds = new Set(
+        sourceEAs.flatMap(
+          (ea) => ea.subAdministrativeZones?.map((saz) => saz.id) || [],
+        ),
+      );
+
+      // Merge with user-provided SAZ IDs (union operation - ensures all are included)
+      const userProvidedSazIds = mergedEaData.subAdministrativeZoneIds || [];
+      const finalSazIds = Array.from(
+        new Set([...sourceSazIds, ...userProvidedSazIds]),
+      );
 
       // Validate new areaCode is unique (allow reusing area code from source EAs)
       // First check if any of the source EAs already have this area code
@@ -1145,7 +1166,7 @@ export class EnumerationAreaService {
       );
 
       // Create merged EA
-      const { subAdministrativeZoneIds, geom, ...restData } = mergedEaData;
+      const { geom, ...restData } = mergedEaData;
 
       // Convert GeoJSON geometry to PostGIS format
       const geomString = JSON.stringify(JSON.parse(geom));
@@ -1163,10 +1184,11 @@ export class EnumerationAreaService {
         },
       );
 
-      // Link to SAZs via junction table
-      if (subAdministrativeZoneIds && subAdministrativeZoneIds.length > 0) {
+      // Link to ALL SAZs via junction table (from source EAs + user-provided)
+      // This ensures the merged EA is linked to all source SAZs, preventing data loss
+      if (finalSazIds.length > 0) {
         await this.junctionRepository.bulkCreate(
-          subAdministrativeZoneIds.map((sazId) => ({
+          finalSazIds.map((sazId) => ({
             enumerationAreaId: mergedEa.id,
             subAdministrativeZoneId: sazId,
           })),

@@ -245,7 +245,7 @@ export class SurveyEnumerationAreaController {
 
   /**
    * Generate CSV template for bulk upload of enumeration areas
-   * Template includes: Dzongkhag Code, Admin Zone Code, Sub Admin Zone Code, Enumeration Code
+   * Template includes: Dzongkhag Code, Gewog/Thromde Code, Chiwog/Lap Code, Enumeration Code
    * @access Admin only
    */
   @Get('template/csv')

@@ -680,22 +680,22 @@ export class SurveyEnumerationAreaService {
 
   /**
    * Generate CSV template for bulk upload of enumeration areas
-   * Template includes: Dzongkhag Code, Admin Zone Code, Sub Admin Zone Code, Enumeration Code
+   * Template includes: Dzongkhag Code, Gewog/Thromde Code, Chiwog/Lap Code, Enumeration Code
    * @returns CSV template string
    */
   async generateCSVTemplate(): Promise<string> {
     const headers = [
       'Dzongkhag Code',
-      'Admin Zone Code',
-      'Sub Admin Zone Code',
+      'Gewog/Thromde Code',
+      'Chiwog/Lap Code',
       'Enumeration Code',
     ];
 
     // Add example row
     const exampleRow = [
       '01', // Example dzongkhag code
-      '01', // Example admin zone code
-      '01', // Example sub admin zone code
+      '01', // Example gewog/thromde code (admin zone)
+      '01', // Example chiwog/lap code (sub admin zone)
       '01', // Example enumeration code
     ];
 
@@ -764,14 +764,38 @@ export class SurveyEnumerationAreaService {
     console.log('[CSV Parse] Dzongkhag Code index:', dzongkhagIndex);
 
     const adminZoneIndex = findColumnIndex(
-      ['Admin Zone Code', 'admin zone code', 'AdminZoneCode', 'Administrative Zone Code'],
-      [(h) => h.includes('admin') && h.includes('zone') && !h.includes('sub')]
+      [
+        'Admin Zone Code',
+        'admin zone code',
+        'AdminZoneCode',
+        'Administrative Zone Code',
+        'Gewog/Thromde Code',
+        'gewog/thromde code',
+      ],
+      [
+        (h) =>
+          (h.includes('admin') && h.includes('zone') && !h.includes('sub')) ||
+          h.includes('gewog') ||
+          h.includes('thromde'),
+      ],
     );
     console.log('[CSV Parse] Admin Zone Code index:', adminZoneIndex);
 
     const subAdminZoneIndex = findColumnIndex(
-      ['Sub Admin Zone Code', 'sub admin zone code', 'SubAdminZoneCode', 'Sub Administrative Zone Code'],
-      [(h) => h.includes('sub') && h.includes('admin') && h.includes('zone')]
+      [
+        'Sub Admin Zone Code',
+        'sub admin zone code',
+        'SubAdminZoneCode',
+        'Sub Administrative Zone Code',
+        'Chiwog/Lap Code',
+        'chiwog/lap code',
+      ],
+      [
+        (h) =>
+          (h.includes('sub') && h.includes('admin') && h.includes('zone')) ||
+          h.includes('chiwog') ||
+          h.includes('lap'),
+      ],
     );
     console.log('[CSV Parse] Sub Admin Zone Code index:', subAdminZoneIndex);
 
@@ -800,6 +824,18 @@ export class SurveyEnumerationAreaService {
       );
     }
 
+    const normalizeCode = (value: string): string => {
+      const trimmed = (value || '').trim();
+      if (!trimmed) {
+        return '';
+      }
+      // If purely numeric and only 1 digit, pad to 2 digits to restore leading zero
+      if (/^\d+$/.test(trimmed) && trimmed.length === 1) {
+        return trimmed.padStart(2, '0');
+      }
+      return trimmed;
+    };
+
     // Parse data rows
     const rows = [];
     for (let i = 1; i < lines.length; i++) {
@@ -819,12 +855,14 @@ export class SurveyEnumerationAreaService {
       }
 
       const rowData = {
-        dzongkhagCode: values[dzongkhagIndex] || '',
-        adminZoneCode: values[adminZoneIndex] || '',
-        subAdminZoneCode: values[subAdminZoneIndex] || '',
-        enumerationCode: values[enumerationIndex] || '',
+        dzongkhagCode: normalizeCode(values[dzongkhagIndex] || ''),
+        adminZoneCode: normalizeCode(values[adminZoneIndex] || ''),
+        subAdminZoneCode: normalizeCode(values[subAdminZoneIndex] || ''),
+        enumerationCode: normalizeCode(values[enumerationIndex] || ''),
         fullEaCode:
-          fullEaIndex !== -1 ? values[fullEaIndex] || undefined : undefined,
+          fullEaIndex !== -1
+            ? normalizeCode(values[fullEaIndex] || '') || undefined
+            : undefined,
       };
       
       console.log(`[CSV Parse] Row ${i + 1} parsed:`, rowData);

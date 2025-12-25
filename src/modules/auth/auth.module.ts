@@ -5,6 +5,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { User } from './entities/user.entity';
 import { SupervisorDzongkhag } from './entities/supervisor-dzongkhag.entity';
+import { SurveyEnumerator } from '../survey/survey-enumerator/entities/survey-enumerator.entity';
 import { JwtStrategy } from './guards/jwt.strategy';
 
 @Module({
@@ -26,6 +27,10 @@ import { JwtStrategy } from './guards/jwt.strategy';
     {
       provide: 'SUPERVISOR_DZONGKHAG_REPOSITORY',
       useValue: SupervisorDzongkhag,
+    },
+    {
+      provide: 'SURVEY_ENUMERATOR_REPOSITORY',
+      useValue: SurveyEnumerator,
     },
   ],
   exports: [AuthService],

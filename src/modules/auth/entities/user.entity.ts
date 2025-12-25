@@ -61,6 +61,18 @@ export class User extends Model {
   })
   role: UserRole;
 
+  @Column({
+    type: DataType.STRING,
+    allowNull: true,
+  })
+  resetPasswordToken: string;
+
+  @Column({
+    type: DataType.DATE,
+    allowNull: true,
+  })
+  resetPasswordExpires: Date;
+
   @BelongsToMany(() => Dzongkhag, () => SupervisorDzongkhag)
   dzongkhags: Dzongkhag[];
 }

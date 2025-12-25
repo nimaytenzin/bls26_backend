@@ -18,6 +18,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Express } from 'express';
 import { SurveyService } from './survey.service';
+import { SurveySchedulerService } from './survey-scheduler.service';
 import { CreateSurveyDto } from './dto/create-survey.dto';
 import { UpdateSurveyDto } from './dto/update-survey.dto';
 import { SurveyStatisticsResponseDto } from './dto/survey-statistics-response.dto';
@@ -32,7 +33,10 @@ import { PaginationQueryDto } from '../../../common/utils/pagination.util';
 
 @Controller('survey')
 export class SurveyController {
-  constructor(private readonly surveyService: SurveyService) {}
+  constructor(
+    private readonly surveyService: SurveyService,
+    private readonly surveySchedulerService: SurveySchedulerService,
+  ) {}
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -295,5 +299,18 @@ export class SurveyController {
     @Body() body: { status: 'ACTIVE' | 'ENDED' },
   ) {
     return this.surveyService.updateStatus(+id, body.status as any);
+  }
+
+  /**
+   * Manually trigger the cron job to mark expired surveys as ENDED
+   * Useful for testing or immediate execution
+   * @access Protected - Admin only
+   */
+  @Post('mark-expired-as-ended')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async manuallyMarkExpiredSurveysAsEnded() {
+    return this.surveySchedulerService.manuallyMarkExpiredSurveysAsEnded();
   }
 }

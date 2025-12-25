@@ -332,18 +332,6 @@ export class SamplingService {
                     'surveyEnumerationAreaId',
                   ],
                 },
-                {
-                  model: SurveyEnumerationArea,
-                  as: 'surveyEnumerationArea',
-                  attributes: [
-                    'id',
-                    'surveyId',
-                    'enumerationAreaId',
-                    'isEnumerated',
-                    'isSampled',
-                    'isPublished',
-                  ],
-                },
               ],
             },
           ],
@@ -449,18 +437,18 @@ export class SamplingService {
                     sample.householdListing.structure.surveyEnumerationAreaId,
                 }
               : null,
-            surveyEnumerationArea: sample.householdListing?.surveyEnumerationArea
+            surveyEnumerationArea: sampling.surveyEnumerationArea
               ? {
-                  id: sample.householdListing.surveyEnumerationArea.id,
-                  surveyId: sample.householdListing.surveyEnumerationArea.surveyId,
+                  id: sampling.surveyEnumerationArea.id,
+                  surveyId: sampling.surveyEnumerationArea.surveyId,
                   enumerationAreaId:
-                    sample.householdListing.surveyEnumerationArea.enumerationAreaId,
+                    sampling.surveyEnumerationArea.enumerationAreaId,
                   isEnumerated:
-                    sample.householdListing.surveyEnumerationArea.isEnumerated,
+                    sampling.surveyEnumerationArea.isEnumerated,
                   isSampled:
-                    sample.householdListing.surveyEnumerationArea.isSampled,
+                    sampling.surveyEnumerationArea.isSampled,
                   isPublished:
-                    sample.householdListing.surveyEnumerationArea.isPublished,
+                    sampling.surveyEnumerationArea.isPublished,
                 }
               : null,
           },

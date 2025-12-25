@@ -65,7 +65,9 @@ export class EnumerationAreaController {
     if (subAdministrativeZoneId) {
       const sazId = parseInt(subAdministrativeZoneId, 10);
       if (isNaN(sazId)) {
-        throw new BadRequestException('Invalid subAdministrativeZoneId parameter');
+        throw new BadRequestException(
+          'Invalid subAdministrativeZoneId parameter',
+        );
       }
       return this.enumerationAreaService.findBySubAdministrativeZone(
         sazId,
@@ -210,7 +212,7 @@ export class EnumerationAreaController {
 
   /**
    * Create multiple SAZs from GeoJSON files and a single EA that links to all of them
-   * 
+   *
    * @access Admin only
    * @route POST /enumeration-area/create-multiple-sazs-with-ea
    * @form multipart/form-data with fields:
@@ -218,7 +220,7 @@ export class EnumerationAreaController {
    *   - sazDataArray: JSON string with array of SAZ data objects
    *     [{ name, areaCode, type, administrativeZoneId }, ...]
    *   - eaData: JSON string with { name, areaCode, description? }
-   * 
+   *
    * @returns Object with created subAdministrativeZones array and enumerationArea
    */
   @Post('create-multiple-sazs-with-ea')
@@ -248,7 +250,8 @@ export class EnumerationAreaController {
   )
   async createMultipleSazsWithEa(
     @UploadedFiles() files: any[],
-    @Body() body: {
+    @Body()
+    body: {
       sazDataArray: string; // JSON string with array of SAZ data
       eaData: string; // JSON string with EA data
     },
@@ -306,7 +309,9 @@ export class EnumerationAreaController {
           !sazData.administrativeZoneId
         ) {
           throw new BadRequestException(
-            `SAZ ${i + 1} data missing required fields: name, areaCode, type, administrativeZoneId`,
+            `SAZ ${
+              i + 1
+            } data missing required fields: name, areaCode, type, administrativeZoneId`,
           );
         }
       }
@@ -341,14 +346,14 @@ export class EnumerationAreaController {
           geometry = geoJsonData;
         } else {
           throw new BadRequestException(
-            `File ${i + 1} GeoJSON: Invalid format. Must be a Feature, FeatureCollection, or Geometry object.`,
+            `File ${
+              i + 1
+            } GeoJSON: Invalid format. Must be a Feature, FeatureCollection, or Geometry object.`,
           );
         }
 
         if (!geometry) {
-          throw new BadRequestException(
-            `No geometry found in file ${i + 1}`,
-          );
+          throw new BadRequestException(`No geometry found in file ${i + 1}`);
         }
 
         geometries.push(geometry);
@@ -475,7 +480,8 @@ export class EnumerationAreaController {
 
   @Get('by-sub-administrative-zone/:subAdministrativeZoneId')
   async findBySubAdministrativeZone(
-    @Param('subAdministrativeZoneId', ParseIntPipe) subAdministrativeZoneId: number,
+    @Param('subAdministrativeZoneId', ParseIntPipe)
+    subAdministrativeZoneId: number,
   ) {
     return this.enumerationAreaService.findBySubAdministrativeZone(
       subAdministrativeZoneId,
@@ -484,7 +490,8 @@ export class EnumerationAreaController {
 
   @Get('geojson/by-sub-administrative-zone/:subAdministrativeZoneId')
   async findAllAsGeoJsonBySubAdministrativeZone(
-    @Param('subAdministrativeZoneId', ParseIntPipe) subAdministrativeZoneId: number,
+    @Param('subAdministrativeZoneId', ParseIntPipe)
+    subAdministrativeZoneId: number,
   ) {
     return this.enumerationAreaService.findAllAsGeoJsonBySubAdministrativeZone(
       subAdministrativeZoneId,
@@ -652,7 +659,9 @@ export class EnumerationAreaController {
             geometry = geoJsonData;
           } else {
             throw new BadRequestException(
-              `Invalid GeoJSON format in file ${index + 1}. Must be a Feature, FeatureCollection, or Geometry object.`,
+              `Invalid GeoJSON format in file ${
+                index + 1
+              }. Must be a Feature, FeatureCollection, or Geometry object.`,
             );
           }
         } catch (error) {
@@ -821,10 +830,7 @@ export class EnumerationAreaController {
     @Param('id', ParseIntPipe) id: number,
     @Query('direction') direction?: 'ancestors' | 'descendants' | 'both',
   ) {
-    return this.enumerationAreaService.getEaLineage(
-      id,
-      direction || 'both',
-    );
+    return this.enumerationAreaService.getEaLineage(id, direction || 'both');
   }
 
   /**
@@ -930,5 +936,4 @@ export class EnumerationAreaController {
     };
     return this.enumerationAreaService.findAllMergedPaginated(query);
   }
-
 }
