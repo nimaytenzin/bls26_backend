@@ -519,7 +519,7 @@ export class EnumerationAreaService {
   }
 
   async findAllAsGeoJson(includeInactive = false): Promise<any> {
-    const inactiveFilter = includeInactive ? '' : 'WHERE "isActive" = true';
+    const inactiveFilter = includeInactive ? '' : 'AND ea."isActive" = true';
     const data: any = await this.enumerationAreaRepository.sequelize.query(
       `SELECT jsonb_build_object(
         'type',     'FeatureCollection',
@@ -529,14 +529,46 @@ export class EnumerationAreaService {
         SELECT jsonb_build_object(
           'type',       'Feature',
           'id',         inputs.id,
-          'geometry',   ST_AsGeoJSON(geom)::jsonb,
-          'properties', to_jsonb(inputs) - 'geom'
+          'geometry',   ST_AsGeoJSON(inputs.geom)::jsonb,
+          'properties', inputs.properties
         ) AS feature
-        FROM (SELECT * FROM "EnumerationAreas" ${inactiveFilter} ORDER BY id) inputs
+        FROM (
+          SELECT DISTINCT ON (ea.id)
+            ea.id,
+            ea.geom,
+            jsonb_build_object(
+              'name', ea.name,
+              'areaCode', ea."areaCode",
+              'sazName', saz.name,
+              'sazType', saz.type,
+              'chiwogCode', CASE WHEN saz.type = 'chiwog' THEN saz."areaCode" ELSE NULL END,
+              'lapCode', CASE WHEN saz.type = 'lap' THEN saz."areaCode" ELSE NULL END,
+              'gewogName', CASE WHEN az.type = 'Gewog' THEN az.name ELSE NULL END,
+              'gewogCode', CASE WHEN az.type = 'Gewog' THEN az."areaCode" ELSE NULL END,
+              'thromdeName', CASE WHEN az.type = 'Thromde' THEN az.name ELSE NULL END,
+              'thromdeCode', CASE WHEN az.type = 'Thromde' THEN az."areaCode" ELSE NULL END,
+              'dzongkhagName', dz.name,
+              'dzongkhagCode', dz."areaCode"
+            ) AS properties
+          FROM "EnumerationAreas" ea
+          LEFT JOIN "EnumerationAreaSubAdministrativeZones" junction 
+            ON ea.id = junction."enumerationAreaId"
+          LEFT JOIN "SubAdministrativeZones" saz 
+            ON junction."subAdministrativeZoneId" = saz.id
+          LEFT JOIN "AdministrativeZones" az 
+            ON saz."administrativeZoneId" = az.id
+          LEFT JOIN "Dzongkhags" dz 
+            ON az."dzongkhagId" = dz.id
+          WHERE 1=1 ${inactiveFilter}
+          ORDER BY ea.id, saz.id
+        ) inputs
       ) features;`,
     );
 
-    return data[0][0].jsonb_build_object;
+    return data[0][0].jsonb_build_object || {
+      type: 'FeatureCollection',
+      features: [],
+    };
   }
 
   async findOneAsGeoJson(id: number): Promise<any> {

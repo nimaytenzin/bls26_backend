@@ -220,14 +220,32 @@ export class AdministrativeZoneService {
         SELECT jsonb_build_object(
           'type',       'Feature',
           'id',         inputs.id,
-          'geometry',   ST_AsGeoJSON(geom)::jsonb,
-          'properties', to_jsonb(inputs) - 'geom'
+          'geometry',   ST_AsGeoJSON(inputs.geom)::jsonb,
+          'properties', inputs.properties
         ) AS feature
-        FROM (SELECT * FROM "AdministrativeZones" ORDER BY id) inputs
+        FROM (
+          SELECT 
+            az.id,
+            az.geom,
+            jsonb_build_object(
+              'name', az.name,
+              'type', az.type,
+              'areaCode', az."areaCode",
+              'dzongkhagName', dz.name,
+              'dzongkhagCode', dz."areaCode"
+            ) AS properties
+          FROM "AdministrativeZones" az
+          LEFT JOIN "Dzongkhags" dz 
+            ON az."dzongkhagId" = dz.id
+          ORDER BY az.id
+        ) inputs
       ) features;`,
     );
 
-    return data[0][0].jsonb_build_object;
+    return data[0][0].jsonb_build_object || {
+      type: 'FeatureCollection',
+      features: [],
+    };
   }
 
   async update(

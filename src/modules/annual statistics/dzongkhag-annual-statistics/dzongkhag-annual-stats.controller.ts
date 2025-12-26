@@ -15,6 +15,7 @@ import { CreateDzongkhagAnnualStatsDto } from './dto/create-dzongkhag-annual-sta
 import { UpdateDzongkhagAnnualStatsDto } from './dto/update-dzongkhag-annual-stats.dto';
 import { DzongkhagAnnualStats } from './entities/dzongkhag-annual-stats.entity';
 import { DzongkhagStatsGeoJsonResponse } from './dto/dzongkhag-stats-geojson.dto';
+import { DzongkhagStatsSimplifiedGeoJsonResponse } from './dto/dzongkhag-stats-simplified-geojson.dto';
 
 @Controller('dzongkhag-annual-stats')
 export class DzongkhagAnnualStatsController {
@@ -22,26 +23,28 @@ export class DzongkhagAnnualStatsController {
     private readonly dzongkhagAnnualStatsService: DzongkhagAnnualStatsService,
   ) {}
 
+ 
+
   /**
-   * Get all Dzongkhags with annual statistics as GeoJSON
-   * Combines geographic boundaries with demographic statistics
-   * Perfect for map visualization and choropleth maps
+   * Get all Dzongkhags with simplified annual statistics as GeoJSON
+   * Returns only essential fields: EA counts, household counts, and population statistics
+   * Perfect for lightweight map visualizations
    *
    * @access Public
    * @query year - Statistical year (defaults to current year)
    *
    * @example
-   * GET /dzongkhag-annual-stats/geojson
-   * GET /dzongkhag-annual-stats/geojson?year=2024
+   * GET /dzongkhag-annual-stats/geojson/simplified
+   * GET /dzongkhag-annual-stats/geojson/simplified?year=2024
    *
-   * @returns GeoJSON FeatureCollection with statistics embedded in properties
+   * @returns Simplified GeoJSON FeatureCollection with essential statistics
    */
-  @Get('all/geojson&stats')
-  async getDzongkhagStatsAsGeoJson(
+  @Get('all/geojson&Stats')
+  async getDzongkhagStatsSimplifiedAsGeoJson(
     @Query('year') year?: string,
-  ): Promise<DzongkhagStatsGeoJsonResponse> {
+  ): Promise<DzongkhagStatsSimplifiedGeoJsonResponse> {
     const statsYear = year ? parseInt(year, 10) : undefined;
-    return this.dzongkhagAnnualStatsService.getDzongkhagStatsAsGeoJson(
+    return this.dzongkhagAnnualStatsService.getDzongkhagStatsSimplifiedAsGeoJson(
       statsYear,
     );
   }

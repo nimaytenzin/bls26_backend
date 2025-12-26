@@ -362,21 +362,21 @@ export class SamplingService {
         sampling.surveyEnumerationArea.enumerationAreaId,
         {
           attributes: ['id', 'name', 'areaCode'],
-          include: [
-            {
-              model: SubAdministrativeZone,
-              as: 'subAdministrativeZones',
-              through: { attributes: [] },
-              attributes: ['id', 'name', 'areaCode', 'type'],
               include: [
                 {
-                  model: AdministrativeZone,
+                  model: SubAdministrativeZone,
+              as: 'subAdministrativeZones',
+                  through: { attributes: [] },
                   attributes: ['id', 'name', 'areaCode', 'type'],
+                  include: [
+                    {
+                      model: AdministrativeZone,
+                      attributes: ['id', 'name', 'areaCode', 'type'],
+                    },
+                  ],
                 },
               ],
             },
-          ],
-        },
       );
     }
 

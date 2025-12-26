@@ -130,5 +130,140 @@ export class AnnualStatisticsDownloadController {
       );
     res.send(csv);
   }
+
+  /**
+   * NATIONAL DATA VIEWER DOWNLOADS
+   * These endpoints provide structured CSV downloads for the national data viewer
+   */
+
+  /**
+   * Download all Dzongkhags with basic statistics for national data viewer
+   * @access Public
+   * @query year - Optional year (defaults to latest available year)
+   * @route GET /annual-statistics-download/national-viewer/dzongkhags/csv
+   * @description Returns: Dzongkhag Name, Dzongkhag Code, EA count, Household Count, Urban EA Count, Rural EA count, Urban household count
+   * @example GET /annual-statistics-download/national-viewer/dzongkhags/csv?year=2024
+   */
+  @Get('national-viewer/dzongkhags/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="national_viewer_dzongkhags.csv"',
+  )
+  async downloadAllDzongkhagsForNationalViewer(
+    @Res() res: Response,
+    @Query('year') year?: string,
+  ) {
+    const yearNumber = year ? parseInt(year, 10) : undefined;
+    const csv =
+      await this.annualStatisticsDownloadService.downloadAllDzongkhagsForNationalViewer(
+        yearNumber,
+      );
+    res.send(csv);
+  }
+
+  /**
+   * Download Dzongkhag with Gewog/Thromde breakdown for national data viewer
+   * @access Public
+   * @query year - Optional year (defaults to latest available year)
+   * @route GET /annual-statistics-download/national-viewer/dzongkhag-gewog-thromde/csv
+   * @description Returns: Dzongkhag Name, Dzongkhag Code, Location, Gewog/Thromde Name, Gewog/Thromde Code, Total EA, Total Household (Location: R=Rural, U=Urban)
+   * @example GET /annual-statistics-download/national-viewer/dzongkhag-gewog-thromde/csv?year=2024
+   */
+  @Get('national-viewer/dzongkhag-gewog-thromde/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="national_viewer_dzongkhag_gewog_thromde.csv"',
+  )
+  async downloadDzongkhagWithGewogThromdeForNationalViewer(
+    @Res() res: Response,
+    @Query('year') year?: string,
+  ) {
+    const yearNumber = year ? parseInt(year, 10) : undefined;
+    const csv =
+      await this.annualStatisticsDownloadService.downloadDzongkhagWithGewogThromdeForNationalViewer(
+        yearNumber,
+      );
+    res.send(csv);
+  }
+
+  /**
+   * Download Dzongkhag -> Gewog/Thromde -> Chiwog/LAP breakdown for national data viewer
+   * @access Public
+   * @query year - Optional year (defaults to latest available year)
+   * @route GET /annual-statistics-download/national-viewer/dzongkhag-chiwog-lap/csv
+   * @description Returns: Dzongkhag Name, Dzongkhag Code, Location, Gewog/Thromde Name, Gewog/Thromde Code, Chiwog/LAP Name, Chiwog/LAP Code, Total EA, Total Household (Location: R=Rural, U=Urban)
+   * @example GET /annual-statistics-download/national-viewer/dzongkhag-chiwog-lap/csv?year=2024
+   */
+  @Get('national-viewer/dzongkhag-chiwog-lap/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="national_viewer_dzongkhag_chiwog_lap.csv"',
+  )
+  async downloadDzongkhagWithChiwogLapForNationalViewer(
+    @Res() res: Response,
+    @Query('year') year?: string,
+  ) {
+    const yearNumber = year ? parseInt(year, 10) : undefined;
+    const csv =
+      await this.annualStatisticsDownloadService.downloadDzongkhagWithChiwogLapForNationalViewer(
+        yearNumber,
+      );
+    res.send(csv);
+  }
+
+  /**
+   * Download rural full hierarchy: Dzongkhag -> Gewog -> Chiwog -> EA for national data viewer
+   * @access Public
+   * @query year - Optional year (defaults to latest available year)
+   * @route GET /annual-statistics-download/national-viewer/rural-full-hierarchy/csv
+   * @description Returns: Dzongkhag Name, Dzongkhag Code, Gewog Name, Gewog Code, Chiwog Name, Chiwog Code, EA Name, EA Code, Household Count
+   * @example GET /annual-statistics-download/national-viewer/rural-full-hierarchy/csv?year=2024
+   */
+  @Get('national-viewer/rural-full-hierarchy/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="national_viewer_rural_full_hierarchy.csv"',
+  )
+  async downloadRuralFullHierarchyForNationalViewer(
+    @Res() res: Response,
+    @Query('year') year?: string,
+  ) {
+    const yearNumber = year ? parseInt(year, 10) : undefined;
+    const csv =
+      await this.annualStatisticsDownloadService.downloadRuralFullHierarchyForNationalViewer(
+        yearNumber,
+      );
+    res.send(csv);
+  }
+
+  /**
+   * Download urban full hierarchy: Dzongkhag -> Thromde -> LAP -> EA for national data viewer
+   * @access Public
+   * @query year - Optional year (defaults to latest available year)
+   * @route GET /annual-statistics-download/national-viewer/urban-full-hierarchy/csv
+   * @description Returns: Dzongkhag Name, Dzongkhag Code, Thromde Name, Thromde Code, LAP Name, LAP Code, EA Name, EA Code, Household Count
+   * @example GET /annual-statistics-download/national-viewer/urban-full-hierarchy/csv?year=2024
+   */
+  @Get('national-viewer/urban-full-hierarchy/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="national_viewer_urban_full_hierarchy.csv"',
+  )
+  async downloadUrbanFullHierarchyForNationalViewer(
+    @Res() res: Response,
+    @Query('year') year?: string,
+  ) {
+    const yearNumber = year ? parseInt(year, 10) : undefined;
+    const csv =
+      await this.annualStatisticsDownloadService.downloadUrbanFullHierarchyForNationalViewer(
+        yearNumber,
+      );
+    res.send(csv);
+  }
 }
 

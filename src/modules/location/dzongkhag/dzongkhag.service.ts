@@ -127,14 +127,27 @@ export class DzongkhagService {
         SELECT jsonb_build_object(
           'type',       'Feature',
           'id',         inputs.id,
-          'geometry',   ST_AsGeoJSON(geom)::jsonb,
-          'properties', to_jsonb(inputs) - 'geom'
+          'geometry',   ST_AsGeoJSON(inputs.geom)::jsonb,
+          'properties', inputs.properties
         ) AS feature
-        FROM (SELECT * FROM "Dzongkhags" ORDER BY id) inputs
+        FROM (
+          SELECT 
+            dz.id,
+            dz.geom,
+            jsonb_build_object(
+              'name', dz.name,
+              'areaCode', dz."areaCode"
+            ) AS properties
+          FROM "Dzongkhags" dz
+          ORDER BY dz.id
+        ) inputs
       ) features;`,
     );
 
-    return data[0][0].jsonb_build_object;
+    return data[0][0].jsonb_build_object || {
+      type: 'FeatureCollection',
+      features: [],
+    };
   }
 
   async findOneAsGeoJson(id: number): Promise<any> {

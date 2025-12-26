@@ -29,6 +29,120 @@ export class LocationDownloadService {
   }
 
   /**
+   * Transform GeoJSON to add Type columns and rename to combined Name/Code format
+   * Format matches CSV structure: Type (R/U), Combined Name, Combined Code
+   * Includes full hierarchy information in properties
+   */
+  private transformGeoJsonForPublicDashboard(
+    geoJson: any,
+    entityType: 'dzongkhag' | 'administrativeZone' | 'subAdministrativeZone' | 'enumerationArea',
+  ): any {
+    if (!geoJson || !geoJson.features) {
+      return geoJson;
+    }
+
+    const transformedFeatures = geoJson.features.map((feature: any) => {
+      if (!feature.properties) {
+        return feature;
+      }
+
+      const props = { ...feature.properties };
+      const areaCode = props.areaCode;
+      const name = props.name;
+      const type = props.type;
+
+      // Remove original areaCode (will be replaced with formatted versions)
+      delete props.areaCode;
+
+      // Transform based on entity type, including hierarchical information
+      switch (entityType) {
+        case 'dzongkhag':
+          // Dzongkhag level: Just rename
+          props['Dzongkhag Name'] = name;
+          props['Dzongkhag Code'] = areaCode;
+          break;
+
+        case 'administrativeZone':
+          // Administrative Zone level: Dzongkhag → Gewog/Thromde
+          // Add Location: R for Gewog, U for Thromde
+          const azType = type === 'Gewog' ? 'R' : type === 'Thromde' ? 'U' : '';
+          props['Dzongkhag Name'] = props.dzongkhagName || '';
+          props['Dzongkhag Code'] = props.dzongkhagCode || '';
+          props['Location'] = azType;
+          props['Gewog/Thromde Name'] = name;
+          props['Gewog/Thromde Code'] = areaCode;
+          // Clean up original hierarchical fields
+          delete props.dzongkhagName;
+          delete props.dzongkhagCode;
+          break;
+
+        case 'subAdministrativeZone':
+          // Sub-Administrative Zone level: Dzongkhag → Gewog/Thromde → Chiwog/LAP
+          // Add Location: R for Gewog, U for Thromde
+          // Determine Administrative Zone Location based on whether it's a Gewog or Thromde
+          const hasGewog = props.gewogName || props.gewogCode;
+          const azType2 = hasGewog ? 'R' : 'U'; // Gewog = R, Thromde = U
+          
+          props['Dzongkhag Name'] = props.dzongkhagName || '';
+          props['Dzongkhag Code'] = props.dzongkhagCode || '';
+          props['Location'] = azType2; // Administrative Zone Location (Gewog/Thromde)
+          props['Gewog/Thromde Name'] = props.gewogName || props.thromdeName || '';
+          props['Gewog/Thromde Code'] = props.gewogCode || props.thromdeCode || '';
+          props['Chiwog/LAP Name'] = name;
+          props['Chiwog/LAP Code'] = areaCode;
+          // Clean up original hierarchical fields
+          delete props.dzongkhagName;
+          delete props.dzongkhagCode;
+          delete props.gewogName;
+          delete props.gewogCode;
+          delete props.thromdeName;
+          delete props.thromdeCode;
+          delete props.chiwogCode;
+          delete props.lapCode;
+          break;
+
+        case 'enumerationArea':
+          // Enumeration Area level: Full hierarchy Dzongkhag → Gewog/Thromde → Chiwog/LAP → EA
+          // Determine Location based on hierarchical information
+          const hasGewog2 = props.gewogName || props.gewogCode;
+          const azType3 = hasGewog2 ? 'R' : 'U'; // Gewog = R, Thromde = U
+          
+          props['Dzongkhag Name'] = props.dzongkhagName || '';
+          props['Dzongkhag Code'] = props.dzongkhagCode || '';
+          props['Location'] = azType3; // Administrative Zone Location (Gewog/Thromde)
+          props['Gewog/Thromde Name'] = props.gewogName || props.thromdeName || '';
+          props['Gewog/Thromde Code'] = props.gewogCode || props.thromdeCode || '';
+          props['Chiwog/LAP Name'] = props.sazName || '';
+          props['Chiwog/LAP Code'] = props.chiwogCode || props.lapCode || '';
+          props['EA Name'] = name;
+          props['EA Code'] = areaCode;
+          // Clean up original hierarchical fields
+          delete props.dzongkhagName;
+          delete props.dzongkhagCode;
+          delete props.gewogName;
+          delete props.gewogCode;
+          delete props.thromdeName;
+          delete props.thromdeCode;
+          delete props.sazName;
+          delete props.sazType;
+          delete props.chiwogCode;
+          delete props.lapCode;
+          break;
+      }
+
+      return {
+        ...feature,
+        properties: props,
+      };
+    });
+
+    return {
+      ...geoJson,
+      features: transformedFeatures,
+    };
+  }
+
+  /**
    * NATIONAL DATA DOWNLOADS
    */
 
@@ -44,7 +158,11 @@ export class LocationDownloadService {
    */
   async downloadAllEAsAsKml(): Promise<string> {
     const geoJson = await this.enumerationAreaService.findAllAsGeoJson();
-    return this.convertGeoJsonToKml(geoJson);
+    const transformedGeoJson = this.transformGeoJsonForPublicDashboard(
+      geoJson,
+      'enumerationArea',
+    );
+    return this.convertGeoJsonToKml(transformedGeoJson);
   }
 
   /**
@@ -59,7 +177,11 @@ export class LocationDownloadService {
    */
   async downloadAllSAZsAsKml(): Promise<string> {
     const geoJson = await this.subAdministrativeZoneService.findAllAsGeoJson();
-    return this.convertGeoJsonToKml(geoJson);
+    const transformedGeoJson = this.transformGeoJsonForPublicDashboard(
+      geoJson,
+      'subAdministrativeZone',
+    );
+    return this.convertGeoJsonToKml(transformedGeoJson);
   }
 
   /**
@@ -74,7 +196,11 @@ export class LocationDownloadService {
    */
   async downloadAllAZsAsKml(): Promise<string> {
     const geoJson = await this.administrativeZoneService.findAllAsGeoJson();
-    return this.convertGeoJsonToKml(geoJson);
+    const transformedGeoJson = this.transformGeoJsonForPublicDashboard(
+      geoJson,
+      'administrativeZone',
+    );
+    return this.convertGeoJsonToKml(transformedGeoJson);
   }
 
   /**
@@ -89,7 +215,11 @@ export class LocationDownloadService {
    */
   async downloadAllDzongkhagsAsKml(): Promise<string> {
     const geoJson = await this.dzongkhagService.findAllAsGeoJson();
-    return this.convertGeoJsonToKml(geoJson);
+    const transformedGeoJson = this.transformGeoJsonForPublicDashboard(
+      geoJson,
+      'dzongkhag',
+    );
+    return this.convertGeoJsonToKml(transformedGeoJson);
   }
 
   /**
@@ -170,7 +300,11 @@ export class LocationDownloadService {
    */
   async downloadEAsByDzongkhagAsKml(dzongkhagId: number): Promise<string> {
     const geoJson = await this.downloadEAsByDzongkhagAsGeoJson(dzongkhagId);
-    return this.convertGeoJsonToKml(geoJson);
+    const transformedGeoJson = this.transformGeoJsonForPublicDashboard(
+      geoJson,
+      'enumerationArea',
+    );
+    return this.convertGeoJsonToKml(transformedGeoJson);
   }
 
   /**
@@ -189,7 +323,11 @@ export class LocationDownloadService {
    */
   async downloadAZsByDzongkhagAsKml(dzongkhagId: number): Promise<string> {
     const geoJson = await this.downloadAZsByDzongkhagAsGeoJson(dzongkhagId);
-    return this.convertGeoJsonToKml(geoJson);
+    const transformedGeoJson = this.transformGeoJsonForPublicDashboard(
+      geoJson,
+      'administrativeZone',
+    );
+    return this.convertGeoJsonToKml(transformedGeoJson);
   }
 
   /**
@@ -240,7 +378,11 @@ export class LocationDownloadService {
    */
   async downloadSAZsByDzongkhagAsKml(dzongkhagId: number): Promise<string> {
     const geoJson = await this.downloadSAZsByDzongkhagAsGeoJson(dzongkhagId);
-    return this.convertGeoJsonToKml(geoJson);
+    const transformedGeoJson = this.transformGeoJsonForPublicDashboard(
+      geoJson,
+      'subAdministrativeZone',
+    );
+    return this.convertGeoJsonToKml(transformedGeoJson);
   }
 
   /**
@@ -267,7 +409,11 @@ export class LocationDownloadService {
     const geoJson = await this.downloadSAZsByAdministrativeZoneAsGeoJson(
       administrativeZoneId,
     );
-    return this.convertGeoJsonToKml(geoJson);
+    const transformedGeoJson = this.transformGeoJsonForPublicDashboard(
+      geoJson,
+      'subAdministrativeZone',
+    );
+    return this.convertGeoJsonToKml(transformedGeoJson);
   }
 
   /**
@@ -330,7 +476,11 @@ export class LocationDownloadService {
     const geoJson = await this.downloadEAsByAdministrativeZoneAsGeoJson(
       administrativeZoneId,
     );
-    return this.convertGeoJsonToKml(geoJson);
+    const transformedGeoJson = this.transformGeoJsonForPublicDashboard(
+      geoJson,
+      'enumerationArea',
+    );
+    return this.convertGeoJsonToKml(transformedGeoJson);
   }
 
   /**
@@ -357,7 +507,11 @@ export class LocationDownloadService {
     const geoJson = await this.downloadEAsBySubAdministrativeZoneAsGeoJson(
       subAdministrativeZoneId,
     );
-    return this.convertGeoJsonToKml(geoJson);
+    const transformedGeoJson = this.transformGeoJsonForPublicDashboard(
+      geoJson,
+      'enumerationArea',
+    );
+    return this.convertGeoJsonToKml(transformedGeoJson);
   }
 }
 

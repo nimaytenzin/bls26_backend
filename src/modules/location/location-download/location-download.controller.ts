@@ -8,15 +8,8 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { LocationDownloadService } from './location-download.service';
-import { UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
-import { RolesGuard } from 'src/modules/auth/guards/roles.guard';
-import { Roles } from 'src/modules/auth/decorators/roles.decorator';
-import { UserRole } from 'src/modules/auth/entities/user.entity';
 
 @Controller('location/download')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
 export class LocationDownloadController {
   constructor(
     private readonly locationDownloadService: LocationDownloadService,
@@ -24,6 +17,7 @@ export class LocationDownloadController {
 
   /**
    * NATIONAL DATA DOWNLOADS
+   * All endpoints are publicly accessible (no authentication required)
    */
 
   /**

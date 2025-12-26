@@ -346,14 +346,39 @@ export class SubAdministrativeZoneService {
         SELECT jsonb_build_object(
           'type',       'Feature',
           'id',         inputs.id,
-          'geometry',   ST_AsGeoJSON(geom)::jsonb,
-          'properties', to_jsonb(inputs) - 'geom'
+          'geometry',   ST_AsGeoJSON(inputs.geom)::jsonb,
+          'properties', inputs.properties
         ) AS feature
-        FROM (SELECT * FROM "SubAdministrativeZones" ORDER BY id) inputs
+        FROM (
+          SELECT 
+            saz.id,
+            saz.geom,
+            jsonb_build_object(
+              'name', saz.name,
+              'type', saz.type,
+              'chiwogCode', CASE WHEN saz.type = 'chiwog' THEN saz."areaCode" ELSE NULL END,
+              'lapCode', CASE WHEN saz.type = 'lap' THEN saz."areaCode" ELSE NULL END,
+              'gewogName', CASE WHEN az.type = 'Gewog' THEN az.name ELSE NULL END,
+              'gewogCode', CASE WHEN az.type = 'Gewog' THEN az."areaCode" ELSE NULL END,
+              'thromdeName', CASE WHEN az.type = 'Thromde' THEN az.name ELSE NULL END,
+              'thromdeCode', CASE WHEN az.type = 'Thromde' THEN az."areaCode" ELSE NULL END,
+              'dzongkhagName', dz.name,
+              'dzongkhagCode', dz."areaCode"
+            ) AS properties
+          FROM "SubAdministrativeZones" saz
+          LEFT JOIN "AdministrativeZones" az 
+            ON saz."administrativeZoneId" = az.id
+          LEFT JOIN "Dzongkhags" dz 
+            ON az."dzongkhagId" = dz.id
+          ORDER BY saz.id
+        ) inputs
       ) features;`,
       );
 
-    return data[0][0].jsonb_build_object;
+    return data[0][0].jsonb_build_object || {
+      type: 'FeatureCollection',
+      features: [],
+    };
   }
 
   async findOneAsGeoJson(id: number): Promise<any> {

@@ -7,6 +7,11 @@ import {
   DzongkhagStatsFeature,
   DzongkhagStatsProperties,
 } from './dto/dzongkhag-stats-geojson.dto';
+import {
+  DzongkhagStatsSimplifiedGeoJsonResponse,
+  DzongkhagStatsSimplifiedFeature,
+  DzongkhagStatsSimplifiedProperties,
+} from './dto/dzongkhag-stats-simplified-geojson.dto';
 import { Dzongkhag } from '../../location/dzongkhag/entities/dzongkhag.entity';
 import {
   AdministrativeZone,
@@ -634,19 +639,20 @@ export class DzongkhagAnnualStatsService {
     };
   }
 
+
   /**
-   * Get all Dzongkhags with annual statistics as GeoJSON
-   * Combines geographic boundaries with demographic/household statistics
+   * Get all Dzongkhags with simplified annual statistics as GeoJSON
+   * Returns only essential fields: EA counts, household counts, and population statistics
    *
    * @param year - Statistical year (defaults to current year)
-   * @returns GeoJSON FeatureCollection with statistics in properties
+   * @returns Simplified GeoJSON FeatureCollection with essential statistics in properties
    */
-  async getDzongkhagStatsAsGeoJson(
+  async getDzongkhagStatsSimplifiedAsGeoJson(
     year?: number,
-  ): Promise<DzongkhagStatsGeoJsonResponse> {
+  ): Promise<DzongkhagStatsSimplifiedGeoJsonResponse> {
     const statsYear = year || new Date().getFullYear();
     this.logger.log(
-      `Fetching Dzongkhag statistics GeoJSON for year ${statsYear}`,
+      `Fetching simplified Dzongkhag statistics GeoJSON for year ${statsYear}`,
     );
 
     // Get all dzongkhags with geometry
@@ -663,150 +669,85 @@ export class DzongkhagAnnualStatsService {
     const statsMap = new Map(allStats.map((stat) => [stat.dzongkhagId, stat]));
 
     // National summary accumulators
+    let nationalTotalEA = 0;
+    let nationalUrbanEA = 0;
+    let nationalRuralEA = 0;
+    let nationalTotalHousehold = 0;
+    let nationalUrbanHousehold = 0;
+    let nationalRuralHousehold = 0;
     let nationalTotalPopulation = 0;
-    let nationalTotalHouseholds = 0;
     let nationalUrbanPopulation = 0;
     let nationalRuralPopulation = 0;
-    let urbanizationRateSum = 0;
-    let dzongkhagsWithData = 0;
 
-    const features: DzongkhagStatsFeature[] = dzongkhags.map((dzongkhag) => {
-      const stats = statsMap.get(dzongkhag.id);
-      const hasData = !!stats;
+    const features: DzongkhagStatsSimplifiedFeature[] = dzongkhags.map(
+      (dzongkhag) => {
+        const stats = statsMap.get(dzongkhag.id);
+        const hasData = !!stats;
 
-      let properties: DzongkhagStatsProperties;
+        let properties: DzongkhagStatsSimplifiedProperties;
 
-      if (hasData && stats) {
-        const totalPopulation = stats.totalMale + stats.totalFemale;
-        const urbanPopulation = stats.urbanMale + stats.urbanFemale;
-        const ruralPopulation = stats.ruralMale + stats.ruralFemale;
-        const urbanizationRate =
-          totalPopulation > 0 ? (urbanPopulation / totalPopulation) * 100 : 0;
-        const averageHouseholdSize =
-          stats.totalHouseholds > 0
-            ? totalPopulation / stats.totalHouseholds
-            : 0;
-        const genderRatio =
-          stats.totalFemale > 0
-            ? (stats.totalMale / stats.totalFemale) * 100
-            : 0;
-        const urbanGenderRatio =
-          stats.urbanFemale > 0
-            ? (stats.urbanMale / stats.urbanFemale) * 100
-            : 0;
-        const ruralGenderRatio =
-          stats.ruralFemale > 0
-            ? (stats.ruralMale / stats.ruralFemale) * 100
-            : 0;
-        const urbanHouseholdPercentage =
-          stats.totalHouseholds > 0
-            ? (stats.urbanHouseholdCount / stats.totalHouseholds) * 100
-            : 0;
-        const ruralHouseholdPercentage =
-          stats.totalHouseholds > 0
-            ? (stats.ruralHouseholdCount / stats.totalHouseholds) * 100
-            : 0;
+        if (hasData && stats) {
+          const totalPopulation = stats.totalMale + stats.totalFemale;
+          const urbanPopulation = stats.urbanMale + stats.urbanFemale;
+          const ruralPopulation = stats.ruralMale + stats.ruralFemale;
 
-        // Accumulate national statistics
-        nationalTotalPopulation += totalPopulation;
-        nationalTotalHouseholds += stats.totalHouseholds;
-        nationalUrbanPopulation += urbanPopulation;
-        nationalRuralPopulation += ruralPopulation;
-        urbanizationRateSum += urbanizationRate;
-        dzongkhagsWithData++;
+          // Accumulate national statistics
+          nationalTotalEA += stats.eaCount;
+          nationalUrbanEA += stats.urbanEACount;
+          nationalRuralEA += stats.ruralEACount;
+          nationalTotalHousehold += stats.totalHouseholds;
+          nationalUrbanHousehold += stats.urbanHouseholdCount;
+          nationalRuralHousehold += stats.ruralHouseholdCount;
+          nationalTotalPopulation += totalPopulation;
+          nationalUrbanPopulation += urbanPopulation;
+          nationalRuralPopulation += ruralPopulation;
 
-        properties = {
+          properties = {
+            id: dzongkhag.id,
+            name: dzongkhag.name,
+            areaCode: dzongkhag.areaCode,
+            year: statsYear,
+            totalEA: stats.eaCount,
+            urbanEA: stats.urbanEACount,
+            ruralEA: stats.ruralEACount,
+            totalHousehold: stats.totalHouseholds,
+            urbanHousehold: stats.urbanHouseholdCount,
+            ruralHousehold: stats.ruralHouseholdCount,
+            totalPopulation,
+            urbanPopulation,
+            ruralPopulation,
+            hasData: true,
+            lastUpdated: stats.updatedAt.toISOString(),
+          };
+        } else {
+          // No statistics available for this year
+          properties = {
+            id: dzongkhag.id,
+            name: dzongkhag.name,
+            areaCode: dzongkhag.areaCode,
+            year: statsYear,
+            totalEA: 0,
+            urbanEA: 0,
+            ruralEA: 0,
+            totalHousehold: 0,
+            urbanHousehold: 0,
+            ruralHousehold: 0,
+            totalPopulation: 0,
+            urbanPopulation: 0,
+            ruralPopulation: 0,
+            hasData: false,
+            lastUpdated: new Date().toISOString(),
+          };
+        }
+
+        return {
+          type: 'Feature',
           id: dzongkhag.id,
-          name: dzongkhag.name,
-          areaCode: dzongkhag.areaCode,
-          year: statsYear,
-          azCount: stats.azCount,
-          urbanAZCount: stats.urbanAZCount,
-          ruralAZCount: stats.ruralAZCount,
-          sazCount: stats.sazCount,
-          urbanSAZCount: stats.urbanSAZCount,
-          ruralSAZCount: stats.ruralSAZCount,
-          eaCount: stats.eaCount,
-          urbanEACount: stats.urbanEACount,
-          ruralEACount: stats.ruralEACount,
-          totalHouseholds: stats.totalHouseholds,
-          urbanHouseholdCount: stats.urbanHouseholdCount,
-          ruralHouseholdCount: stats.ruralHouseholdCount,
-          urbanHouseholdPercentage:
-            Math.round(urbanHouseholdPercentage * 100) / 100,
-          ruralHouseholdPercentage:
-            Math.round(ruralHouseholdPercentage * 100) / 100,
-          totalPopulation,
-          totalMale: stats.totalMale,
-          totalFemale: stats.totalFemale,
-          urbanPopulation,
-          urbanMale: stats.urbanMale,
-          urbanFemale: stats.urbanFemale,
-          ruralPopulation,
-          ruralMale: stats.ruralMale,
-          ruralFemale: stats.ruralFemale,
-          urbanizationRate: Math.round(urbanizationRate * 100) / 100,
-          averageHouseholdSize: Math.round(averageHouseholdSize * 100) / 100,
-          genderRatio: Math.round(genderRatio * 100) / 100,
-          urbanGenderRatio: Math.round(urbanGenderRatio * 100) / 100,
-          ruralGenderRatio: Math.round(ruralGenderRatio * 100) / 100,
-          hasData: true,
-          lastUpdated: stats.updatedAt.toISOString(),
+          geometry: dzongkhag.geom as any,
+          properties,
         };
-      } else {
-        // No statistics available for this year
-        properties = {
-          id: dzongkhag.id,
-          name: dzongkhag.name,
-          areaCode: dzongkhag.areaCode,
-          year: statsYear,
-          azCount: 0,
-          urbanAZCount: 0,
-          ruralAZCount: 0,
-          sazCount: 0,
-          urbanSAZCount: 0,
-          ruralSAZCount: 0,
-          eaCount: 0,
-          urbanEACount: 0,
-          ruralEACount: 0,
-          totalHouseholds: 0,
-          urbanHouseholdCount: 0,
-          ruralHouseholdCount: 0,
-          urbanHouseholdPercentage: 0,
-          ruralHouseholdPercentage: 0,
-          totalPopulation: 0,
-          totalMale: 0,
-          totalFemale: 0,
-          urbanPopulation: 0,
-          urbanMale: 0,
-          urbanFemale: 0,
-          ruralPopulation: 0,
-          ruralMale: 0,
-          ruralFemale: 0,
-          urbanizationRate: 0,
-          averageHouseholdSize: 0,
-          genderRatio: 0,
-          urbanGenderRatio: 0,
-          ruralGenderRatio: 0,
-          hasData: false,
-          lastUpdated: new Date().toISOString(),
-        };
-      }
-
-      return {
-        type: 'Feature',
-        id: dzongkhag.id,
-        geometry: dzongkhag.geom as any,
-        properties,
-      };
-    });
-
-    const nationalUrbanizationRate =
-      nationalTotalPopulation > 0
-        ? (nationalUrbanPopulation / nationalTotalPopulation) * 100
-        : 0;
-    const averageUrbanizationRate =
-      dzongkhagsWithData > 0 ? urbanizationRateSum / dzongkhagsWithData : 0;
+      },
+    );
 
     return {
       type: 'FeatureCollection',
@@ -815,14 +756,15 @@ export class DzongkhagAnnualStatsService {
         totalDzongkhags: dzongkhags.length,
         generatedAt: new Date().toISOString(),
         nationalSummary: {
+          totalEA: nationalTotalEA,
+          urbanEA: nationalUrbanEA,
+          ruralEA: nationalRuralEA,
+          totalHousehold: nationalTotalHousehold,
+          urbanHousehold: nationalUrbanHousehold,
+          ruralHousehold: nationalRuralHousehold,
           totalPopulation: nationalTotalPopulation,
-          totalHouseholds: nationalTotalHouseholds,
           urbanPopulation: nationalUrbanPopulation,
           ruralPopulation: nationalRuralPopulation,
-          nationalUrbanizationRate:
-            Math.round(nationalUrbanizationRate * 100) / 100,
-          averageUrbanizationRate:
-            Math.round(averageUrbanizationRate * 100) / 100,
         },
       },
       features,

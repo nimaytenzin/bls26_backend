@@ -12,6 +12,7 @@ import { EAAnnualStats } from '../ea-annual-statistics/entities/ea-annual-stats.
 import { Dzongkhag } from '../../location/dzongkhag/entities/dzongkhag.entity';
 import { AdministrativeZone } from '../../location/administrative-zone/entities/administrative-zone.entity';
 import { SubAdministrativeZone } from '../../location/sub-administrative-zone/entities/sub-administrative-zone.entity';
+import { EnumerationArea } from '../../location/enumeration-area/entities/enumeration-area.entity';
 
 @Injectable()
 export class AnnualStatisticsDownloadService {
@@ -364,6 +365,336 @@ export class AnnualStatisticsDownloadService {
     rows.push(
       `"${saz.name}",${sazStats?.eaCount || 0},${sazStats?.totalHouseholds || 0}`,
     );
+
+    return rows.join('\n');
+  }
+
+  /**
+   * Download all Dzongkhags with basic statistics for national data viewer
+   * Format: Dzongkhag Name, Dzongkhag Code, EA count, Household Count, Urban EA Count, Rural EA count, Urban household count
+   */
+  async downloadAllDzongkhagsForNationalViewer(year?: number): Promise<string> {
+    const resolvedYear = await this.resolveYear(year);
+
+    const stats = await DzongkhagAnnualStats.findAll({
+      where: { year: resolvedYear },
+      include: [
+        {
+          model: Dzongkhag,
+          as: 'dzongkhag',
+          attributes: ['id', 'name', 'areaCode'],
+        },
+      ],
+      order: [['dzongkhagId', 'ASC']],
+    });
+
+    const rows: string[] = [];
+    rows.push(
+      'Dzongkhag Name,Dzongkhag Code,EA Count,Household Count,Urban EA Count,Rural EA Count,Urban Household Count',
+    );
+
+    for (const stat of stats) {
+      const dzongkhag = stat.dzongkhag;
+      rows.push(
+        `"${dzongkhag?.name || 'N/A'}","${dzongkhag?.areaCode || 'N/A'}",${stat.eaCount || 0},${stat.totalHouseholds || 0},${stat.urbanEACount || 0},${stat.ruralEACount || 0},${stat.urbanHouseholdCount || 0}`,
+      );
+    }
+
+    return rows.join('\n');
+  }
+
+  /**
+   * Download Dzongkhag with Gewog/Thromde breakdown for national data viewer
+   * Format: Dzongkhag Name, Dzongkhag Code, Location, Gewog/Thromde Name, Gewog/Thromde Code, Total EA, Total Household
+   * Location: R (Rural) for Gewog, U (Urban) for Thromde
+   */
+  async downloadDzongkhagWithGewogThromdeForNationalViewer(
+    year?: number,
+  ): Promise<string> {
+    const resolvedYear = await this.resolveYear(year);
+
+    const dzongkhags = await Dzongkhag.findAll({
+      attributes: ['id', 'name', 'areaCode'],
+      order: [['id', 'ASC']],
+    });
+
+    const rows: string[] = [];
+    rows.push(
+      'Dzongkhag Name,Dzongkhag Code,Location,Gewog/Thromde Name,Gewog/Thromde Code,Total EA,Total Household',
+    );
+
+    for (const dzongkhag of dzongkhags) {
+      const administrativeZones = await AdministrativeZone.findAll({
+        where: { dzongkhagId: dzongkhag.id },
+        attributes: ['id', 'name', 'areaCode', 'type'],
+        order: [['id', 'ASC']],
+      });
+
+      for (const az of administrativeZones) {
+        const azStats = await AZAnnualStats.findOne({
+          where: { administrativeZoneId: az.id, year: resolvedYear },
+        });
+
+        const type = az.type === 'Gewog' ? 'R' : 'U';
+        rows.push(
+          `"${dzongkhag.name}","${dzongkhag.areaCode}","${type}","${az.name}","${az.areaCode}",${azStats?.eaCount || 0},${azStats?.totalHouseholds || 0}`,
+        );
+      }
+    }
+
+    return rows.join('\n');
+  }
+
+  /**
+   * Download Dzongkhag -> Gewog/Thromde -> Chiwog/LAP breakdown for national data viewer
+   * Format: Dzongkhag Name, Dzongkhag Code, Location, Gewog/Thromde Name, Gewog/Thromde Code, Chiwog/LAP Name, Chiwog/LAP Code, Total EA, Total Household
+   * Location: R (Rural) for Gewog, U (Urban) for Thromde
+   */
+  async downloadDzongkhagWithChiwogLapForNationalViewer(
+    year?: number,
+  ): Promise<string> {
+    const resolvedYear = await this.resolveYear(year);
+
+    const dzongkhags = await Dzongkhag.findAll({
+      attributes: ['id', 'name', 'areaCode'],
+      order: [['id', 'ASC']],
+    });
+
+    const rows: string[] = [];
+    rows.push(
+      'Dzongkhag Name,Dzongkhag Code,Location,Gewog/Thromde Name,Gewog/Thromde Code,Chiwog/LAP Name,Chiwog/LAP Code,Total EA,Total Household',
+    );
+
+    for (const dzongkhag of dzongkhags) {
+      const administrativeZones = await AdministrativeZone.findAll({
+        where: { dzongkhagId: dzongkhag.id },
+        attributes: ['id', 'name', 'areaCode', 'type'],
+        order: [['id', 'ASC']],
+      });
+
+      for (const az of administrativeZones) {
+        const sazs = await SubAdministrativeZone.findAll({
+          where: { administrativeZoneId: az.id },
+          attributes: ['id', 'name', 'areaCode', 'type'],
+          order: [['id', 'ASC']],
+        });
+
+        for (const saz of sazs) {
+          const sazStats = await SAZAnnualStats.findOne({
+            where: { subAdministrativeZoneId: saz.id, year: resolvedYear },
+          });
+
+          const azType = az.type === 'Gewog' ? 'R' : 'U';
+
+          rows.push(
+            `"${dzongkhag.name}","${dzongkhag.areaCode}","${azType}","${az.name}","${az.areaCode}","${saz.name}","${saz.areaCode}",${sazStats?.eaCount || 0},${sazStats?.totalHouseholds || 0}`,
+          );
+        }
+      }
+    }
+
+    return rows.join('\n');
+  }
+
+  /**
+   * Download full hierarchy: Dzongkhag -> Gewog/Thromde -> Chiwog/LAP -> EA for national data viewer
+   * Format: Dzongkhag Name, Dzongkhag Code, Location, Gewog/Thromde Name, Gewog/Thromde Code, Chiwog/LAP Name, Chiwog/LAP Code, EA Name, EA Code, Household Count
+   * Location: R (Rural) for Gewog, U (Urban) for Thromde
+   */
+  async downloadFullHierarchyForNationalViewer(year?: number): Promise<string> {
+    const resolvedYear = await this.resolveYear(year);
+
+    const dzongkhags = await Dzongkhag.findAll({
+      attributes: ['id', 'name', 'areaCode'],
+      order: [['id', 'ASC']],
+    });
+
+    const rows: string[] = [];
+    rows.push(
+      'Dzongkhag Name,Dzongkhag Code,Location,Gewog/Thromde Name,Gewog/Thromde Code,Chiwog/LAP Name,Chiwog/LAP Code,EA Name,EA Code,Household Count',
+    );
+
+    for (const dzongkhag of dzongkhags) {
+      const administrativeZones = await AdministrativeZone.findAll({
+        where: { dzongkhagId: dzongkhag.id },
+        attributes: ['id', 'name', 'areaCode', 'type'],
+        order: [['id', 'ASC']],
+      });
+
+      for (const az of administrativeZones) {
+        const sazs = await SubAdministrativeZone.findAll({
+          where: { administrativeZoneId: az.id },
+          attributes: ['id', 'name', 'areaCode', 'type'],
+          order: [['id', 'ASC']],
+        });
+
+        for (const saz of sazs) {
+          // Get all EAs for this SAZ via junction table
+          const eas = await EnumerationArea.findAll({
+            attributes: ['id', 'name', 'areaCode'],
+            include: [
+              {
+                model: SubAdministrativeZone,
+                as: 'subAdministrativeZones',
+                through: { attributes: [] },
+                where: { id: saz.id },
+                required: true,
+              },
+            ],
+            where: { isActive: true },
+            order: [['id', 'ASC']],
+          });
+
+          const azType = az.type === 'Gewog' ? 'R' : 'U';
+
+          for (const ea of eas) {
+            const eaStats = await EAAnnualStats.findOne({
+              where: { enumerationAreaId: ea.id, year: resolvedYear },
+            });
+
+            rows.push(
+              `"${dzongkhag.name}","${dzongkhag.areaCode}","${azType}","${az.name}","${az.areaCode}","${saz.name}","${saz.areaCode}","${ea.name}","${ea.areaCode}",${eaStats?.totalHouseholds || 0}`,
+            );
+          }
+        }
+      }
+    }
+
+    return rows.join('\n');
+  }
+
+  /**
+   * Download rural full hierarchy: Dzongkhag -> Gewog -> Chiwog -> EA for national data viewer
+   * Format: Dzongkhag Name, Dzongkhag Code, Gewog Name, Gewog Code, Chiwog Name, Chiwog Code, EA Name, EA Code, Household Count
+   */
+  async downloadRuralFullHierarchyForNationalViewer(
+    year?: number,
+  ): Promise<string> {
+    const resolvedYear = await this.resolveYear(year);
+
+    const dzongkhags = await Dzongkhag.findAll({
+      attributes: ['id', 'name', 'areaCode'],
+      order: [['id', 'ASC']],
+    });
+
+    const rows: string[] = [];
+    rows.push(
+      'Dzongkhag Name,Dzongkhag Code,Gewog Name,Gewog Code,Chiwog Name,Chiwog Code,EA Name,EA Code,Household Count',
+    );
+
+    for (const dzongkhag of dzongkhags) {
+      // Get only Gewog (rural) administrative zones
+      const administrativeZones = await AdministrativeZone.findAll({
+        where: { dzongkhagId: dzongkhag.id, type: 'Gewog' },
+        attributes: ['id', 'name', 'areaCode', 'type'],
+        order: [['id', 'ASC']],
+      });
+
+      for (const az of administrativeZones) {
+        // Get only Chiwog (rural) sub-administrative zones
+        const sazs = await SubAdministrativeZone.findAll({
+          where: { administrativeZoneId: az.id, type: 'chiwog' },
+          attributes: ['id', 'name', 'areaCode', 'type'],
+          order: [['id', 'ASC']],
+        });
+
+        for (const saz of sazs) {
+          // Get all EAs for this SAZ via junction table
+          const eas = await EnumerationArea.findAll({
+            attributes: ['id', 'name', 'areaCode'],
+            include: [
+              {
+                model: SubAdministrativeZone,
+                as: 'subAdministrativeZones',
+                through: { attributes: [] },
+                where: { id: saz.id },
+                required: true,
+              },
+            ],
+            where: { isActive: true },
+            order: [['id', 'ASC']],
+          });
+
+          for (const ea of eas) {
+            const eaStats = await EAAnnualStats.findOne({
+              where: { enumerationAreaId: ea.id, year: resolvedYear },
+            });
+
+            rows.push(
+              `"${dzongkhag.name}","${dzongkhag.areaCode}","${az.name}","${az.areaCode}","${saz.name}","${saz.areaCode}","${ea.name}","${ea.areaCode}",${eaStats?.totalHouseholds || 0}`,
+            );
+          }
+        }
+      }
+    }
+
+    return rows.join('\n');
+  }
+
+  /**
+   * Download urban full hierarchy: Dzongkhag -> Thromde -> LAP -> EA for national data viewer
+   * Format: Dzongkhag Name, Dzongkhag Code, Thromde Name, Thromde Code, LAP Name, LAP Code, EA Name, EA Code, Household Count
+   */
+  async downloadUrbanFullHierarchyForNationalViewer(
+    year?: number,
+  ): Promise<string> {
+    const resolvedYear = await this.resolveYear(year);
+
+    const dzongkhags = await Dzongkhag.findAll({
+      attributes: ['id', 'name', 'areaCode'],
+      order: [['id', 'ASC']],
+    });
+
+    const rows: string[] = [];
+    rows.push(
+      'Dzongkhag Name,Dzongkhag Code,Thromde Name,Thromde Code,LAP Name,LAP Code,EA Name,EA Code,Household Count',
+    );
+
+    for (const dzongkhag of dzongkhags) {
+      // Get only Thromde (urban) administrative zones
+      const administrativeZones = await AdministrativeZone.findAll({
+        where: { dzongkhagId: dzongkhag.id, type: 'Thromde' },
+        attributes: ['id', 'name', 'areaCode', 'type'],
+        order: [['id', 'ASC']],
+      });
+
+      for (const az of administrativeZones) {
+        // Get only LAP (urban) sub-administrative zones
+        const sazs = await SubAdministrativeZone.findAll({
+          where: { administrativeZoneId: az.id, type: 'lap' },
+          attributes: ['id', 'name', 'areaCode', 'type'],
+          order: [['id', 'ASC']],
+        });
+
+        for (const saz of sazs) {
+          // Get all EAs for this SAZ via junction table
+          const eas = await EnumerationArea.findAll({
+            attributes: ['id', 'name', 'areaCode'],
+            include: [
+              {
+                model: SubAdministrativeZone,
+                as: 'subAdministrativeZones',
+                through: { attributes: [] },
+                where: { id: saz.id },
+                required: true,
+              },
+            ],
+            where: { isActive: true },
+            order: [['id', 'ASC']],
+          });
+
+          for (const ea of eas) {
+            const eaStats = await EAAnnualStats.findOne({
+              where: { enumerationAreaId: ea.id, year: resolvedYear },
+            });
+
+            rows.push(
+              `"${dzongkhag.name}","${dzongkhag.areaCode}","${az.name}","${az.areaCode}","${saz.name}","${saz.areaCode}","${ea.name}","${ea.areaCode}",${eaStats?.totalHouseholds || 0}`,
+            );
+          }
+        }
+      }
+    }
 
     return rows.join('\n');
   }
