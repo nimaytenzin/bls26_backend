@@ -343,21 +343,6 @@ export class SamplingService {
             {
               model: EnumerationArea,
               attributes: ['id', 'name', 'areaCode'],
-              include: [
-                {
-                  model: SubAdministrativeZone,
-                  as: 'subAdministrativeZones',  // Via junction table
-                  through: { attributes: [] },
-                  attributes: ['id', 'name', 'areaCode', 'type'],
-                  separate: true,  // Execute as separate query to avoid duplicate table references
-                  include: [
-                    {
-                      model: AdministrativeZone,
-                      attributes: ['id', 'name', 'areaCode', 'type'],
-                    },
-                  ],
-                },
-              ],
             },
           ],
         },
@@ -367,6 +352,31 @@ export class SamplingService {
     if (!sampling) {
       throw new NotFoundException(
         'No sampling results found for this enumeration area',
+      );
+    }
+
+    // Fetch EnumerationArea with subAdministrativeZones separately to avoid duplicate table references
+    let enumerationAreaWithZones = null;
+    if (sampling.surveyEnumerationArea?.enumerationAreaId) {
+      enumerationAreaWithZones = await EnumerationArea.findByPk(
+        sampling.surveyEnumerationArea.enumerationAreaId,
+        {
+          attributes: ['id', 'name', 'areaCode'],
+          include: [
+            {
+              model: SubAdministrativeZone,
+              as: 'subAdministrativeZones',
+              through: { attributes: [] },
+              attributes: ['id', 'name', 'areaCode', 'type'],
+              include: [
+                {
+                  model: AdministrativeZone,
+                  attributes: ['id', 'name', 'areaCode', 'type'],
+                },
+              ],
+            },
+          ],
+        },
       );
     }
 
@@ -397,19 +407,23 @@ export class SamplingService {
           isPublished: sampling.surveyEnumerationArea?.isPublished,
         },
         enumerationArea: {
-          id: sampling.surveyEnumerationArea?.enumerationArea?.id,
-          name: sampling.surveyEnumerationArea?.enumerationArea?.name,
-          areaCode: sampling.surveyEnumerationArea?.enumerationArea?.areaCode,
-          subAdminZone: {
-            name: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZones?.[0]?.name,
-            areaCode: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZones?.[0]?.areaCode,
-            type: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZones?.[0]?.type,
-          },
-          adminZone: {
-            name: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZones?.[0]?.administrativeZone?.name,
-            areaCode: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZones?.[0]?.administrativeZone?.areaCode,
-            type: sampling.surveyEnumerationArea?.enumerationArea?.subAdministrativeZones?.[0]?.administrativeZone?.type,
-          },
+          id: enumerationAreaWithZones?.id || sampling.surveyEnumerationArea?.enumerationArea?.id,
+          name: enumerationAreaWithZones?.name || sampling.surveyEnumerationArea?.enumerationArea?.name,
+          areaCode: enumerationAreaWithZones?.areaCode || sampling.surveyEnumerationArea?.enumerationArea?.areaCode,
+          subAdminZone: enumerationAreaWithZones?.subAdministrativeZones?.[0]
+            ? {
+                name: enumerationAreaWithZones.subAdministrativeZones[0].name,
+                areaCode: enumerationAreaWithZones.subAdministrativeZones[0].areaCode,
+                type: enumerationAreaWithZones.subAdministrativeZones[0].type,
+              }
+            : null,
+          adminZone: enumerationAreaWithZones?.subAdministrativeZones?.[0]?.administrativeZone
+            ? {
+                name: enumerationAreaWithZones.subAdministrativeZones[0].administrativeZone.name,
+                areaCode: enumerationAreaWithZones.subAdministrativeZones[0].administrativeZone.areaCode,
+                type: enumerationAreaWithZones.subAdministrativeZones[0].administrativeZone.type,
+              }
+            : null,
         },
         selectedHouseholds: sampling.samples?.map((sample) => ({
           selectionOrder: sample.selectionOrder,
