@@ -2,24 +2,53 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Building } from './entities/building.entity';
 import { UpdateBuildingDto } from './dto/update-building.dto';
 import { instanceToPlain } from 'class-transformer';
+import { QueryTypes } from 'sequelize';
+import { Sequelize } from 'sequelize-typescript';
 
 @Injectable()
 export class BuildingsService {
   constructor(
     @Inject('BUILDING_REPOSITORY')
     private readonly buildingRepository: typeof Building,
+    @Inject('SEQUELIZE')
+    private readonly sequelize: Sequelize,
   ) {}
 
   /**
-   * Find all buildings in a specific enumeration area
+   * Find all buildings in a specific enumeration area as GeoJSON
    * @param enumerationAreaId - Enumeration Area ID
+   * @returns GeoJSON FeatureCollection
    */
-  async findByEnumerationArea(enumerationAreaId: number): Promise<Building[]> {
-    return await this.buildingRepository.findAll<Building>({
-      where: { enumerationAreaId },
-      include: ['enumerationArea'],
-      order: [['structureId', 'ASC']],
-    });
+  async findByEnumerationArea(enumerationAreaId: number): Promise<any> {
+    const data: any = await this.sequelize.query(
+      `SELECT jsonb_build_object(
+        'type',     'FeatureCollection',
+        'features', jsonb_agg(features.feature)
+      )
+      FROM (
+        SELECT jsonb_build_object(
+          'type',       'Feature',
+          'geometry',   ST_AsGeoJSON(geom)::jsonb,
+          'properties', to_jsonb(inputs) - 'geometry'
+        ) AS feature
+        FROM (
+          SELECT * FROM public."buildingGeom" 
+          WHERE "eaId" = :eaId
+        ) inputs
+      ) features;`,
+      {
+        replacements: { eaId: enumerationAreaId },
+        type: QueryTypes.SELECT,
+      },
+    );
+
+    // Extract the GeoJSON FeatureCollection from the query result
+    const featureCollection = data[0]?.[0];
+
+    return featureCollection?.jsonb_build_object || {
+      type: 'FeatureCollection',
+      features: [],
+    };
   }
 
   /**

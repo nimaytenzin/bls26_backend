@@ -85,6 +85,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Check if user is active
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is deactivated. Please contact administrator.');
+    }
+
     // Verify password
     const isPasswordValid = await bcrypt.compare(
       loginDto.password,
@@ -289,6 +294,15 @@ export class AuthService {
   async validateUser(userId: number) {
     const user = await this.userRepository.findByPk(userId);
 
+    if (!user) {
+      return null;
+    }
+
+    // Check if user is active
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is deactivated. Please contact administrator.');
+    }
+
     const { password, ...userWithoutPassword } = user.toJSON();
     return userWithoutPassword;
   }
@@ -464,6 +478,54 @@ export class AuthService {
 
     return {
       message: 'User deleted successfully',
+    };
+  }
+
+  /**
+   * Activate user (Admin only)
+   */
+  async activateUser(userId: number) {
+    const user = await this.userRepository.findByPk(userId);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.isActive) {
+      throw new BadRequestException('User is already active');
+    }
+
+    user.isActive = true;
+    await user.save();
+
+    const { password, ...userWithoutPassword } = user.toJSON();
+    return {
+      message: 'User activated successfully',
+      user: userWithoutPassword,
+    };
+  }
+
+  /**
+   * Deactivate user (Admin only)
+   */
+  async deactivateUser(userId: number) {
+    const user = await this.userRepository.findByPk(userId);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (!user.isActive) {
+      throw new BadRequestException('User is already deactivated');
+    }
+
+    user.isActive = false;
+    await user.save();
+
+    const { password, ...userWithoutPassword } = user.toJSON();
+    return {
+      message: 'User deactivated successfully',
+      user: userWithoutPassword,
     };
   }
 

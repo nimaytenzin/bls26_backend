@@ -1,92 +1,130 @@
 import { Injectable } from '@nestjs/common';
 import { GeographicStatisticalCodeResponse } from './geographic-statistical-code.dto';
-import PdfPrinter from 'pdfmake';
-import * as fs from 'fs';
-import * as path from 'path';
+
+// PDFKit is a CommonJS module, use require
+const PDFDocument = require('pdfkit');
 
 @Injectable()
 export class PdfGeneratorService {
-  private fonts: any;
-
-  constructor() {
-    // Initialize fonts - try to load from node_modules, fallback to default if not found
-    this.initializeFonts();
-  }
-
-  private initializeFonts(): void {
-    const fontPaths = [
-      path.join(process.cwd(), 'node_modules/pdfmake/build/fonts/Roboto'),
-      path.join(__dirname, '../../../node_modules/pdfmake/build/fonts/Roboto'),
-      path.join(__dirname, '../../../../node_modules/pdfmake/build/fonts/Roboto'),
-    ];
-
-    let fontDir: string | null = null;
-    for (const fontPath of fontPaths) {
-      if (fs.existsSync(fontPath)) {
-        fontDir = fontPath;
-        break;
-      }
-    }
-
-    if (fontDir) {
-      // Load fonts as buffers (required by pdfmake)
-      try {
-        this.fonts = {
-          Roboto: {
-            normal: fs.readFileSync(path.join(fontDir, 'Roboto-Regular.ttf')),
-            bold: fs.readFileSync(path.join(fontDir, 'Roboto-Medium.ttf')),
-            italics: fs.readFileSync(path.join(fontDir, 'Roboto-Italic.ttf')),
-            bolditalics: fs.readFileSync(path.join(fontDir, 'Roboto-MediumItalic.ttf')),
-          },
-        };
-      } catch (error) {
-        // If font files can't be read, use empty object (pdfmake will use default fonts)
-        this.fonts = {};
-      }
-    } else {
-      // Fallback: Use pdfmake's default fonts (Helvetica)
-      // pdfmake will use built-in fonts if no custom fonts are provided
-      this.fonts = {};
-    }
-  }
-
   /**
-   * Generate PDF buffer from report data
+   * Generate PDF buffer from report data using PDFKit
    */
   async generatePDF(reportData: GeographicStatisticalCodeResponse): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      let hasError = false;
+
+      try {
+        const doc = new PDFDocument({
+          size: 'A4',
+          margins: {
+            top: 60,
+            bottom: 60,
+            left: 40,
+            right: 40,
+          },
+        });
+
+        doc.on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+        });
+
+        doc.on('end', () => {
+          if (hasError) {
+            return;
+          }
+
     try {
-      const printer = new PdfPrinter(this.fonts);
-      const docDefinition = this.buildDocumentDefinition(reportData);
-      
-      return new Promise<Buffer>((resolve, reject) => {
-        const pdfDoc = printer.createPdfKitDocument(docDefinition);
-        const chunks: any[] = [];
+            const buffer = Buffer.concat(chunks as Uint8Array[]);
+            
+            // Validate PDF buffer
+            if (!buffer || buffer.length === 0) {
+              reject(new Error('Generated PDF buffer is empty'));
+              return;
+            }
 
-        pdfDoc.on('data', (chunk: any) => {
-          chunks.push(Buffer.from(chunk));
+            // Verify it's a valid PDF (starts with %PDF-)
+            const pdfHeader = buffer.slice(0, 4).toString();
+            if (pdfHeader !== '%PDF') {
+              reject(new Error(`Generated buffer is not a valid PDF. Header: ${pdfHeader}`));
+              return;
+            }
+
+            resolve(buffer);
+          } catch (error) {
+            reject(new Error(`Failed to concatenate PDF chunks: ${error.message}`));
+          }
         });
 
-        pdfDoc.on('end', () => {
-          const buffer = Buffer.concat(chunks);
-          resolve(buffer);
+        doc.on('error', (error: Error) => {
+          hasError = true;
+          reject(new Error(`PDF generation error: ${error.message}`));
         });
 
-        pdfDoc.on('error', (error: Error) => {
-          reject(new Error(`Failed to generate PDF: ${error.message}`));
-        });
+        // Build PDF content
+        try {
+          this.buildPDFContent(doc, reportData);
+        } catch (error) {
+          hasError = true;
+          reject(new Error(`Failed to build PDF content: ${error.message}`));
+          return;
+        }
 
-        pdfDoc.end();
-      });
+        // Finalize PDF
+        doc.end();
     } catch (error) {
-      throw new Error(`Failed to generate PDF: ${error.message}`);
+        hasError = true;
+        reject(new Error(`Failed to generate PDF: ${error.message}`));
     }
+    });
   }
 
   /**
-   * Build PDF document definition
+   * Build PDF content
    */
-  private buildDocumentDefinition(reportData: GeographicStatisticalCodeResponse): any {
-    // Format generation date
+  private buildPDFContent(
+    doc: PDFKit.PDFDocument,
+    reportData: GeographicStatisticalCodeResponse,
+  ): void {
+    // Header
+    doc
+      .fontSize(18)
+      .font('Helvetica-Bold')
+      .fillColor('#2c3e50')
+      .text('Geographic Statistical Code Report', {
+        align: 'center',
+      })
+      .moveDown(1);
+
+    // Summary Section
+    doc
+      .fontSize(14)
+      .font('Helvetica-Bold')
+      .fillColor('#34495e')
+      .text('Summary', { align: 'left' })
+      .moveDown(0.5);
+
+    doc.fontSize(10).font('Helvetica').fillColor('black');
+
+    // Summary data in two columns
+    doc.text(`Total Dzongkhags: ${reportData.totalDzongkhags}`, {
+      continued: true,
+      align: 'left',
+    });
+    doc.text(`Total EAs: ${reportData.totalEAs}`, {
+      align: 'right',
+    });
+
+    doc.moveDown(0.5);
+    doc.text(`Urban EAs: ${reportData.totalUrbanEAs}`, {
+      continued: true,
+      align: 'left',
+    });
+    doc.text(`Rural EAs: ${reportData.totalRuralEAs}`, {
+      align: 'right',
+    });
+
+    // Generated date
     const generatedDate = new Date(reportData.generatedAt).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
@@ -95,232 +133,223 @@ export class PdfGeneratorService {
       minute: '2-digit',
     });
 
-    const currentYear = new Date().getFullYear();
+    doc
+      .moveDown(1)
+      .fontSize(8)
+      .font('Helvetica-Oblique')
+      .fillColor('#666666')
+      .text(`Generated: ${generatedDate}`)
+      .moveDown(1.5);
 
-    return {
-      pageSize: 'A4',
-      pageOrientation: 'portrait',
-      pageMargins: [40, 60, 40, 60],
-      defaultStyle: {
-        font: this.fonts.Roboto ? 'Roboto' : 'Helvetica',
-        fontSize: 10,
-      },
-      header: {
-        text: 'Geographic Statistical Code Report',
-        style: 'header',
-        margin: [0, 20, 0, 20],
-      },
-      content: [
-        // Summary Section
-        {
-          text: 'Summary',
-          style: 'sectionHeader',
-          margin: [0, 0, 0, 10],
-        },
-        {
-          columns: [
-            {
-              text: [
-                { text: 'Total Dzongkhags: ', bold: true },
-                { text: `${reportData.totalDzongkhags}` },
-              ],
-            },
-            {
-              text: [
-                { text: 'Total EAs: ', bold: true },
-                { text: `${reportData.totalEAs}` },
-              ],
-            },
-          ],
-          margin: [0, 0, 0, 5],
-        },
-        {
-          columns: [
-            {
-              text: [
-                { text: 'Urban EAs: ', bold: true },
-                { text: `${reportData.totalUrbanEAs}` },
-              ],
-            },
-            {
-              text: [
-                { text: 'Rural EAs: ', bold: true },
-                { text: `${reportData.totalRuralEAs}` },
-              ],
-            },
-          ],
-          margin: [0, 0, 0, 15],
-        },
-        {
-          text: `Generated: ${generatedDate}`,
-          fontSize: 8,
-          italics: true,
-          margin: [0, 0, 0, 20],
-        },
-        // Dzongkhag Details
-        ...this.buildDzongkhagSections(reportData.dzongkhags),
-      ],
-      styles: {
-        header: {
-          fontSize: 18,
-          bold: true,
-          alignment: 'center',
-          color: '#2c3e50',
-        },
-        sectionHeader: {
-          fontSize: 14,
-          bold: true,
-          color: '#34495e',
-          margin: [0, 10, 0, 5],
-        },
-        dzongkhagHeader: {
-          fontSize: 12,
-          bold: true,
-          color: '#2980b9',
-          margin: [0, 15, 0, 5],
-        },
-        tableHeader: {
-          bold: true,
-          fontSize: 9,
-          color: '#ffffff',
-          fillColor: '#34495e',
-        },
-        tableCell: {
-          fontSize: 8,
-        },
-      },
-      footer: function(currentPage: number, pageCount: number) {
-        return {
-          text: `Page ${currentPage} of ${pageCount}`,
-          alignment: 'center',
-          fontSize: 8,
-          margin: [0, 10, 0, 0],
-        };
-      },
-    };
+    // Dzongkhag Details
+    this.buildDzongkhagSections(doc, reportData.dzongkhags);
   }
 
   /**
-   * Build dzongkhag sections for PDF
+   * Build dzongkhag sections
    */
-  private buildDzongkhagSections(dzongkhags: any[]): any[] {
-    const sections: any[] = [];
-
+  private buildDzongkhagSections(doc: PDFKit.PDFDocument, dzongkhags: any[]): void {
     for (const dz of dzongkhags) {
-      sections.push({
-        text: `${dz.name} (${dz.code})`,
-        style: 'dzongkhagHeader',
-      });
+      // Check if we need a new page
+      if (doc.y > 700) {
+        doc.addPage();
+      }
+
+      // Dzongkhag header
+      doc
+        .fontSize(12)
+        .font('Helvetica-Bold')
+        .fillColor('#2980b9')
+        .text(`${dz.name} (${dz.code})`, { align: 'left' })
+        .moveDown(0.5);
 
       // Summary table
-      sections.push({
-        table: {
-          widths: ['*', '*', '*', '*', '*', '*'],
-          body: [
-            [
-              { text: 'Gewogs', style: 'tableHeader' },
-              { text: 'Thromdes', style: 'tableHeader' },
-              { text: 'Chiwogs', style: 'tableHeader' },
-              { text: 'LAPs', style: 'tableHeader' },
-              { text: 'Urban EAs', style: 'tableHeader' },
-              { text: 'Rural EAs', style: 'tableHeader' },
-            ],
-            [
-              { text: `${dz.summary.totalGewogs}`, style: 'tableCell', alignment: 'center' },
-              { text: `${dz.summary.totalThromdes}`, style: 'tableCell', alignment: 'center' },
-              { text: `${dz.summary.totalChiwogs}`, style: 'tableCell', alignment: 'center' },
-              { text: `${dz.summary.totalLaps}`, style: 'tableCell', alignment: 'center' },
-              { text: `${dz.summary.urbanEAs}`, style: 'tableCell', alignment: 'center' },
-              { text: `${dz.summary.ruralEAs}`, style: 'tableCell', alignment: 'center' },
-            ],
-          ],
-        },
-        margin: [0, 0, 0, 10],
-      });
+      this.buildSummaryTable(doc, dz.summary);
 
       // Urban EAs table
       if (dz.urbanEAs && dz.urbanEAs.length > 0) {
-        sections.push({
-          text: 'Urban Enumeration Areas',
-          style: 'sectionHeader',
-          fontSize: 11,
-        });
-        sections.push(this.buildEATable(dz.urbanEAs, true));
-      }
+        doc.moveDown(0.5);
+        doc
+          .fontSize(11)
+          .font('Helvetica-Bold')
+          .fillColor('#34495e')
+          .text('Urban Enumeration Areas', { align: 'left' })
+          .moveDown(0.3);
+        this.buildEATable(doc, dz.urbanEAs, true);
+  }
 
       // Rural EAs table
       if (dz.ruralEAs && dz.ruralEAs.length > 0) {
-        sections.push({
-          text: 'Rural Enumeration Areas',
-          style: 'sectionHeader',
-          fontSize: 11,
-        });
-        sections.push(this.buildEATable(dz.ruralEAs, false));
+        doc.moveDown(0.5);
+        doc
+          .fontSize(11)
+          .font('Helvetica-Bold')
+          .fillColor('#34495e')
+          .text('Rural Enumeration Areas', { align: 'left' })
+          .moveDown(0.3);
+        this.buildEATable(doc, dz.ruralEAs, false);
       }
-    }
 
-    return sections;
+      doc.moveDown(1);
+    }
   }
 
   /**
-   * Build EA table for PDF
+   * Build summary table
    */
-  private buildEATable(eas: any[], isUrban: boolean): any {
-    const tableBody: any[] = [];
+  private buildSummaryTable(doc: PDFKit.PDFDocument, summary: any): void {
+    const tableTop = doc.y;
+    const cellHeight = 20;
+    const cellPadding = 5;
+    const pageWidth = doc.page.width;
+    const margin = 40;
+    const tableWidth = pageWidth - (margin * 2);
+    const columnWidth = tableWidth / 6;
 
     // Header row
-    if (isUrban) {
-      tableBody.push([
-        { text: 'EA Code', style: 'tableHeader' },
-        { text: 'EA Name', style: 'tableHeader' },
-        { text: 'Thromde', style: 'tableHeader' },
-        { text: 'LAP', style: 'tableHeader' },
-      ]);
-    } else {
-      tableBody.push([
-        { text: 'EA Code', style: 'tableHeader' },
-        { text: 'EA Name', style: 'tableHeader' },
-        { text: 'Gewog', style: 'tableHeader' },
-        { text: 'Chiwog', style: 'tableHeader' },
-      ]);
+    const headers = ['Gewogs', 'Thromdes', 'Chiwogs', 'LAPs', 'Urban EAs', 'Rural EAs'];
+    let x = margin;
+
+    doc.font('Helvetica-Bold').fontSize(9);
+    for (const header of headers) {
+      // Draw filled rectangle for header background
+      doc
+        .rect(x, tableTop, columnWidth, cellHeight)
+        .fill('#34495e');
+      // Draw text in white
+      doc.fillColor('#ffffff');
+      doc.text(header, x + cellPadding, tableTop + cellPadding, {
+        width: columnWidth - cellPadding * 2,
+        align: 'center',
+      });
+      x += columnWidth;
+    }
+
+    // Data row
+    const dataY = tableTop + cellHeight;
+    const data = [
+      summary.totalGewogs,
+      summary.totalThromdes,
+      summary.totalChiwogs,
+      summary.totalLaps,
+      summary.urbanEAs,
+      summary.ruralEAs,
+    ];
+    x = margin;
+
+    doc.font('Helvetica').fontSize(8).fillColor('black');
+    for (const value of data) {
+      // Draw border rectangle
+      doc
+        .rect(x, dataY, columnWidth, cellHeight)
+        .stroke('#cccccc');
+      // Draw text
+      doc.text(String(value), x + cellPadding, dataY + cellPadding, {
+        width: columnWidth - cellPadding * 2,
+        align: 'center',
+      });
+      x += columnWidth;
+    }
+
+    doc.y = dataY + cellHeight + 5;
+  }
+
+  /**
+   * Build EA table
+   */
+  private buildEATable(
+    doc: PDFKit.PDFDocument,
+    eas: any[],
+    isUrban: boolean,
+  ): void {
+    const tableTop = doc.y;
+    const cellHeight = 18;
+    const cellPadding = 5;
+    const pageWidth = doc.page.width;
+    const margin = 40;
+    const tableWidth = pageWidth - (margin * 2);
+
+    // Column widths: EA Code (auto), EA Name (*), Zone (*), SubZone (*)
+    const codeWidth = 80;
+    const remainingWidth = tableWidth - codeWidth;
+    const nameWidth = remainingWidth / 3;
+    const zoneWidth = remainingWidth / 3;
+    const subZoneWidth = remainingWidth / 3;
+
+    // Headers
+    const headers = isUrban
+      ? ['EA Code', 'EA Name', 'Thromde', 'LAP']
+      : ['EA Code', 'EA Name', 'Gewog', 'Chiwog'];
+
+    let x = margin;
+    const widths = [codeWidth, nameWidth, zoneWidth, subZoneWidth];
+
+    doc.font('Helvetica-Bold').fontSize(9);
+    for (let i = 0; i < headers.length; i++) {
+      // Draw filled rectangle for header background
+      doc
+        .rect(x, tableTop, widths[i], cellHeight)
+        .fill('#34495e');
+      // Draw text in white
+      doc.fillColor('#ffffff');
+      doc.text(headers[i], x + cellPadding, tableTop + cellPadding, {
+        width: widths[i] - cellPadding * 2,
+        align: 'left',
+      });
+      x += widths[i];
     }
 
     // Data rows
+    doc.font('Helvetica').fontSize(8).fillColor('black');
+    let currentY = tableTop + cellHeight;
+
     for (const ea of eas) {
-      if (isUrban) {
-        tableBody.push([
-          { text: ea.eaCode, style: 'tableCell' },
-          { text: ea.eaName, style: 'tableCell' },
-          { text: `${ea.administrativeZone.name} (${ea.administrativeZone.code})`, style: 'tableCell' },
-          { text: `${ea.subAdministrativeZone.name} (${ea.subAdministrativeZone.code})`, style: 'tableCell' },
-        ]);
-      } else {
-        tableBody.push([
-          { text: ea.eaCode, style: 'tableCell' },
-          { text: ea.eaName, style: 'tableCell' },
-          { text: `${ea.administrativeZone.name} (${ea.administrativeZone.code})`, style: 'tableCell' },
-          { text: `${ea.subAdministrativeZone.name} (${ea.subAdministrativeZone.code})`, style: 'tableCell' },
-        ]);
+      // Check if we need a new page
+      if (currentY > 750) {
+        doc.addPage();
+        currentY = doc.page.margins.top;
+        // Redraw headers on new page
+        x = margin;
+        doc.font('Helvetica-Bold').fontSize(9);
+        for (let i = 0; i < headers.length; i++) {
+          // Draw filled rectangle for header background
+          doc
+            .rect(x, currentY, widths[i], cellHeight)
+            .fill('#34495e');
+          // Draw text in white
+          doc.fillColor('#ffffff');
+          doc.text(headers[i], x + cellPadding, currentY + cellPadding, {
+            width: widths[i] - cellPadding * 2,
+            align: 'left',
+          });
+          x += widths[i];
+        }
+        currentY += cellHeight;
+        doc.font('Helvetica').fontSize(8).fillColor('black');
       }
+
+      const rowData = [
+        ea.eaCode,
+        ea.eaName,
+        `${ea.administrativeZone.name} (${ea.administrativeZone.code})`,
+        `${ea.subAdministrativeZone.name} (${ea.subAdministrativeZone.code})`,
+      ];
+
+      x = margin;
+      for (let i = 0; i < rowData.length; i++) {
+        doc
+          .rect(x, currentY, widths[i], cellHeight)
+          .stroke('#cccccc');
+        doc.text(rowData[i], x + cellPadding, currentY + cellPadding, {
+          width: widths[i] - cellPadding * 2,
+          align: 'left',
+        });
+        x += widths[i];
+      }
+
+      currentY += cellHeight;
     }
 
-    return {
-      table: {
-        widths: ['auto', '*', '*', '*'],
-        body: tableBody,
-      },
-      margin: [0, 0, 0, 15],
-      layout: {
-        hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length) ? 1 : 0.5,
-        vLineWidth: () => 0.5,
-        hLineColor: () => '#cccccc',
-        vLineColor: () => '#cccccc',
-        paddingLeft: () => 5,
-        paddingRight: () => 5,
-        paddingTop: () => 3,
-        paddingBottom: () => 3,
-      },
-    };
+    doc.y = currentY + 5;
   }
 }
-

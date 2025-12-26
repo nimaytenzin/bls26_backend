@@ -73,6 +73,13 @@ export class User extends Model {
   })
   resetPasswordExpires: Date;
 
+  @Column({
+    type: DataType.BOOLEAN,
+    allowNull: false,
+    defaultValue: true,
+  })
+  isActive: boolean;
+
   @BelongsToMany(() => Dzongkhag, () => SupervisorDzongkhag)
   dzongkhags: Dzongkhag[];
 }

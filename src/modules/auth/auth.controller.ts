@@ -318,6 +318,30 @@ export class AuthController {
     return this.authService.deleteUser(+id);
   }
 
+  /**
+   * Activate user (Admin only)
+   * @access Protected - Admin only
+   */
+  @Patch('users/:id/activate')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async activateUser(@Param('id') id: string) {
+    return this.authService.activateUser(+id);
+  }
+
+  /**
+   * Deactivate user (Admin only)
+   * @access Protected - Admin only
+   */
+  @Patch('users/:id/deactivate')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async deactivateUser(@Param('id') id: string) {
+    return this.authService.deactivateUser(+id);
+  }
+
   // ============ DZONGKHAG ASSIGNMENT ROUTES ============
 
   /**

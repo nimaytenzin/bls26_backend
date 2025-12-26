@@ -29,13 +29,15 @@ export class GeographicStatisticalCodeController {
    * @param download - Optional query parameter to force download
    */
   @Get('pdf')
-  @Header('Content-Type', 'application/pdf')
   async generatePDF(@Res() res: Response, @Query('download') download?: string) {
     const reportData = await this.geographicStatisticalCodeService.getReportData();
     const pdfBuffer = await this.pdfGeneratorService.generatePDF(reportData);
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
     const filename = `geographic-statistical-code-report-${timestamp}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', pdfBuffer.length.toString());
 
     if (download === 'true') {
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
