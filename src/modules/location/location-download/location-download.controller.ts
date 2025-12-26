@@ -345,6 +345,38 @@ export class LocationDownloadController {
   }
 
   /**
+   * Download Chiwogs by Administrative Zone as GeoJSON
+   */
+  @Get('administrative-zone/:administrativeZoneId/chiwogs/geojson')
+  @Header('Content-Type', 'application/geo+json')
+  @Header('Content-Disposition', 'attachment; filename="chiwogs_by_admin_zone.geojson"')
+  async downloadChiwogsByAdministrativeZoneAsGeoJson(
+    @Param('administrativeZoneId', ParseIntPipe) administrativeZoneId: number,
+    @Res() res: Response,
+  ) {
+    const geoJson = await this.locationDownloadService.downloadChiwogsByAdministrativeZoneAsGeoJson(
+      administrativeZoneId,
+    );
+    res.json(geoJson);
+  }
+
+  /**
+   * Download Chiwogs by Administrative Zone as KML
+   */
+  @Get('administrative-zone/:administrativeZoneId/chiwogs/kml')
+  @Header('Content-Type', 'application/vnd.google-earth.kml+xml')
+  @Header('Content-Disposition', 'attachment; filename="chiwogs_by_admin_zone.kml"')
+  async downloadChiwogsByAdministrativeZoneAsKml(
+    @Param('administrativeZoneId', ParseIntPipe) administrativeZoneId: number,
+    @Res() res: Response,
+  ) {
+    const kml = await this.locationDownloadService.downloadChiwogsByAdministrativeZoneAsKml(
+      administrativeZoneId,
+    );
+    res.send(kml);
+  }
+
+  /**
    * SUB-ADMINISTRATIVE ZONE DATA DOWNLOADS
    */
 

@@ -224,7 +224,7 @@ export class AnnualStatisticsDownloadController {
    * @param administrativeZoneId - Administrative Zone ID
    * @query year - Optional year (defaults to latest available year)
    * @route GET /annual-statistics-download/administrative-zone/:administrativeZoneId/sampling-frame/csv
-   * @description Returns: Gewog/Thromde Name, Gewog/Thromde Code, Chiwog/LAP Name, Chiwog/LAP Code, EA Name, EA Code, Household Count
+   * @description Returns: Column names are dynamic based on zone type. For Gewog: Gewog Name, Gewog Code, Chiwog Name, Chiwog Code, EA Name, EA Code, Household Count. For Thromde: Thromde Name, Thromde Code, LAP Name, LAP Code, EA Name, EA Code, Household Count
    * @example GET /annual-statistics-download/administrative-zone/1/sampling-frame/csv?year=2024
    */
   @Get('administrative-zone/:administrativeZoneId/sampling-frame/csv')
@@ -253,7 +253,7 @@ export class AnnualStatisticsDownloadController {
    * @param subAdministrativeZoneId - Sub-Administrative Zone ID
    * @query year - Optional year (defaults to latest available year)
    * @route GET /annual-statistics-download/sub-administrative-zone/:subAdministrativeZoneId/sampling-frame/csv
-   * @description Returns: Chiwog/LAP Name, Chiwog/LAP Code, EA Name, EA Code, Household Count
+   * @description Returns: Column names are dynamic based on zone type. For Chiwog: Chiwog Name, Chiwog Code, EA Name, EA Code, Household Count. For LAP: LAP Name, LAP Code, EA Name, EA Code, Household Count
    * @example GET /annual-statistics-download/sub-administrative-zone/1/sampling-frame/csv?year=2024
    */
   @Get('sub-administrative-zone/:subAdministrativeZoneId/sampling-frame/csv')

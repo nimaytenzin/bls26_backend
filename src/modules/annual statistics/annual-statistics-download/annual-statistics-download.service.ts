@@ -921,7 +921,7 @@ export class AnnualStatisticsDownloadService {
 
   /**
    * Download Administrative Zone (Gewog/Thromde) sampling frame: AZ -> SAZ -> EA
-   * Format: Gewog/Thromde Name, Gewog/Thromde Code, Chiwog/LAP Name, Chiwog/LAP Code, EA Name, EA Code, Household Count
+   * Format: Dynamic based on type - Gewog/Chiwog for rural, Thromde/LAP for urban
    */
   async downloadAdministrativeZoneSamplingFrame(
     administrativeZoneId: number,
@@ -940,9 +940,14 @@ export class AnnualStatisticsDownloadService {
       );
     }
 
+    // Determine column headers based on AZ type
+    const isGewog = az.type === 'Gewog';
+    const azLabel = isGewog ? 'Gewog' : 'Thromde';
+    const sazLabel = isGewog ? 'Chiwog' : 'LAP';
+
     const rows: string[] = [];
     rows.push(
-      'Gewog/Thromde Name,Gewog/Thromde Code,Chiwog/LAP Name,Chiwog/LAP Code,EA Name,EA Code,Household Count',
+      `${azLabel} Name,${azLabel} Code,${sazLabel} Name,${sazLabel} Code,EA Name,EA Code,Household Count`,
     );
 
     // Get all SAZs for this Administrative Zone
@@ -985,7 +990,7 @@ export class AnnualStatisticsDownloadService {
 
   /**
    * Download Sub-Administrative Zone (Chiwog/LAP) sampling frame: SAZ -> EA
-   * Format: Chiwog/LAP Name, Chiwog/LAP Code, EA Name, EA Code, Household Count
+   * Format: Dynamic based on type - Chiwog for rural, LAP for urban
    */
   async downloadSubAdministrativeZoneSamplingFrame(
     subAdministrativeZoneId: number,
@@ -1004,9 +1009,13 @@ export class AnnualStatisticsDownloadService {
       );
     }
 
+    // Determine column headers based on SAZ type
+    const isChiwog = saz.type === 'chiwog';
+    const sazLabel = isChiwog ? 'Chiwog' : 'LAP';
+
     const rows: string[] = [];
     rows.push(
-      'Chiwog/LAP Name,Chiwog/LAP Code,EA Name,EA Code,Household Count',
+      `${sazLabel} Name,${sazLabel} Code,EA Name,EA Code,Household Count`,
     );
 
     // Get all EAs for this SAZ via junction table

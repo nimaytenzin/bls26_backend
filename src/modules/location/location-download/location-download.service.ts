@@ -498,9 +498,52 @@ export class LocationDownloadService {
   async downloadSAZsByAdministrativeZoneAsGeoJson(
     administrativeZoneId: number,
   ): Promise<any> {
-    return await this.subAdministrativeZoneService.findAllAsGeoJsonByAdministrativeZone(
-      administrativeZoneId,
+    // Build query with hierarchy information
+    const subAdminZoneRepo = (this.subAdministrativeZoneService as any).subAdministrativeZoneRepository;
+    const data: any = await subAdminZoneRepo.sequelize.query(
+      `SELECT jsonb_build_object(
+        'type',     'FeatureCollection',
+        'features', jsonb_agg(features.feature)
+      )
+      FROM (
+        SELECT jsonb_build_object(
+          'type',       'Feature',
+          'id',         inputs.id,
+          'geometry',   ST_AsGeoJSON(inputs.geom)::jsonb,
+          'properties', inputs.properties
+        ) AS feature
+        FROM (
+          SELECT 
+            saz.id,
+            saz.geom,
+            jsonb_build_object(
+              'name', saz.name,
+              'type', saz.type,
+              'areaCode', saz."areaCode",
+              'chiwogCode', CASE WHEN saz.type = 'chiwog' THEN saz."areaCode" ELSE NULL END,
+              'lapCode', CASE WHEN saz.type = 'lap' THEN saz."areaCode" ELSE NULL END,
+              'gewogName', CASE WHEN az.type = 'Gewog' THEN az.name ELSE NULL END,
+              'gewogCode', CASE WHEN az.type = 'Gewog' THEN az."areaCode" ELSE NULL END,
+              'thromdeName', CASE WHEN az.type = 'Thromde' THEN az.name ELSE NULL END,
+              'thromdeCode', CASE WHEN az.type = 'Thromde' THEN az."areaCode" ELSE NULL END,
+              'dzongkhagName', dz.name,
+              'dzongkhagCode', dz."areaCode"
+            ) AS properties
+          FROM "SubAdministrativeZones" saz
+          LEFT JOIN "AdministrativeZones" az 
+            ON saz."administrativeZoneId" = az.id
+          LEFT JOIN "Dzongkhags" dz 
+            ON az."dzongkhagId" = dz.id
+          WHERE saz."administrativeZoneId" = ${administrativeZoneId}
+          ORDER BY saz.id
+        ) inputs
+      ) features;`,
     );
+
+    return data[0][0].jsonb_build_object || {
+      type: 'FeatureCollection',
+      features: [],
+    };
   }
 
   /**
@@ -520,25 +563,82 @@ export class LocationDownloadService {
   }
 
   /**
+   * Download Chiwogs by Administrative Zone as GeoJSON
+   */
+  async downloadChiwogsByAdministrativeZoneAsGeoJson(
+    administrativeZoneId: number,
+  ): Promise<any> {
+    // Build query for Chiwogs (SAZs of type 'chiwog') with hierarchy information
+    const subAdminZoneRepo = (this.subAdministrativeZoneService as any).subAdministrativeZoneRepository;
+    const data: any = await subAdminZoneRepo.sequelize.query(
+      `SELECT jsonb_build_object(
+        'type',     'FeatureCollection',
+        'features', jsonb_agg(features.feature)
+      )
+      FROM (
+        SELECT jsonb_build_object(
+          'type',       'Feature',
+          'id',         inputs.id,
+          'geometry',   ST_AsGeoJSON(inputs.geom)::jsonb,
+          'properties', inputs.properties
+        ) AS feature
+        FROM (
+          SELECT 
+            saz.id,
+            saz.geom,
+            jsonb_build_object(
+              'name', saz.name,
+              'type', saz.type,
+              'areaCode', saz."areaCode",
+              'chiwogCode', saz."areaCode",
+              'gewogName', CASE WHEN az.type = 'Gewog' THEN az.name ELSE NULL END,
+              'gewogCode', CASE WHEN az.type = 'Gewog' THEN az."areaCode" ELSE NULL END,
+              'thromdeName', CASE WHEN az.type = 'Thromde' THEN az.name ELSE NULL END,
+              'thromdeCode', CASE WHEN az.type = 'Thromde' THEN az."areaCode" ELSE NULL END,
+              'dzongkhagName', dz.name,
+              'dzongkhagCode', dz."areaCode"
+            ) AS properties
+          FROM "SubAdministrativeZones" saz
+          LEFT JOIN "AdministrativeZones" az 
+            ON saz."administrativeZoneId" = az.id
+          LEFT JOIN "Dzongkhags" dz 
+            ON az."dzongkhagId" = dz.id
+          WHERE saz."administrativeZoneId" = ${administrativeZoneId}
+            AND saz.type = 'chiwog'
+          ORDER BY saz.id
+        ) inputs
+      ) features;`,
+    );
+
+    return data[0][0].jsonb_build_object || {
+      type: 'FeatureCollection',
+      features: [],
+    };
+  }
+
+  /**
+   * Download Chiwogs by Administrative Zone as KML
+   */
+  async downloadChiwogsByAdministrativeZoneAsKml(
+    administrativeZoneId: number,
+  ): Promise<string> {
+    const geoJson = await this.downloadChiwogsByAdministrativeZoneAsGeoJson(
+      administrativeZoneId,
+    );
+    const transformedGeoJson = this.transformGeoJsonForPublicDashboard(
+      geoJson,
+      'subAdministrativeZone',
+    );
+    return this.convertGeoJsonToKml(transformedGeoJson);
+  }
+
+  /**
    * Download Enumeration Areas by Administrative Zone as GeoJSON
    */
   async downloadEAsByAdministrativeZoneAsGeoJson(
     administrativeZoneId: number,
   ): Promise<any> {
-    // Get sub-administrative zones for this admin zone
-    const subAdminZones = await this.subAdministrativeZoneService.findByAdministrativeZone(
-      administrativeZoneId,
-    );
-    const subAdminZoneIds = subAdminZones.map((saz) => saz.id);
-
-    if (subAdminZoneIds.length === 0) {
-      return {
-        type: 'FeatureCollection',
-        features: [],
-      };
-    }
-
-    // Get enumeration areas for these sub-admin zones via junction table
+    // Get enumeration areas with hierarchy information for this administrative zone
     const enumerationAreaRepo = (this.enumerationAreaService as any).enumerationAreaRepository;
     const data: any = await enumerationAreaRepo.sequelize.query(
       `SELECT jsonb_build_object(
@@ -549,17 +649,39 @@ export class LocationDownloadService {
         SELECT jsonb_build_object(
           'type',       'Feature',
           'id',         inputs.id,
-          'geometry',   ST_AsGeoJSON(geom)::jsonb,
-          'properties', to_jsonb(inputs) - 'geom'
+          'geometry',   ST_AsGeoJSON(inputs.geom)::jsonb,
+          'properties', inputs.properties
         ) AS feature
         FROM (
-          SELECT DISTINCT ea.* 
+          SELECT DISTINCT ON (ea.id)
+            ea.id,
+            ea.geom,
+            jsonb_build_object(
+              'name', ea.name,
+              'areaCode', ea."areaCode",
+              'sazName', saz.name,
+              'sazType', saz.type,
+              'chiwogCode', CASE WHEN saz.type = 'chiwog' THEN saz."areaCode" ELSE NULL END,
+              'lapCode', CASE WHEN saz.type = 'lap' THEN saz."areaCode" ELSE NULL END,
+              'gewogName', CASE WHEN az.type = 'Gewog' THEN az.name ELSE NULL END,
+              'gewogCode', CASE WHEN az.type = 'Gewog' THEN az."areaCode" ELSE NULL END,
+              'thromdeName', CASE WHEN az.type = 'Thromde' THEN az.name ELSE NULL END,
+              'thromdeCode', CASE WHEN az.type = 'Thromde' THEN az."areaCode" ELSE NULL END,
+              'dzongkhagName', dz.name,
+              'dzongkhagCode', dz."areaCode"
+            ) AS properties
           FROM "EnumerationAreas" ea
-          INNER JOIN "EnumerationAreaSubAdministrativeZones" junction 
+          LEFT JOIN "EnumerationAreaSubAdministrativeZones" junction 
             ON ea.id = junction."enumerationAreaId"
-          WHERE junction."subAdministrativeZoneId" = ANY(ARRAY[${subAdminZoneIds.join(',')}])
+          LEFT JOIN "SubAdministrativeZones" saz 
+            ON junction."subAdministrativeZoneId" = saz.id
+          LEFT JOIN "AdministrativeZones" az 
+            ON saz."administrativeZoneId" = az.id
+          LEFT JOIN "Dzongkhags" dz 
+            ON az."dzongkhagId" = dz.id
+          WHERE az.id = ${administrativeZoneId}
             AND ea."isActive" = true
-          ORDER BY ea.id
+          ORDER BY ea.id, saz.id
         ) inputs
       ) features;`,
     );
@@ -596,9 +718,58 @@ export class LocationDownloadService {
   async downloadEAsBySubAdministrativeZoneAsGeoJson(
     subAdministrativeZoneId: number,
   ): Promise<any> {
-    return await this.enumerationAreaService.findAllAsGeoJsonBySubAdministrativeZone(
-      subAdministrativeZoneId,
+    // Get enumeration areas with hierarchy information for this sub-administrative zone
+    const enumerationAreaRepo = (this.enumerationAreaService as any).enumerationAreaRepository;
+    const data: any = await enumerationAreaRepo.sequelize.query(
+      `SELECT jsonb_build_object(
+        'type',     'FeatureCollection',
+        'features', jsonb_agg(features.feature)
+      )
+      FROM (
+        SELECT jsonb_build_object(
+          'type',       'Feature',
+          'id',         inputs.id,
+          'geometry',   ST_AsGeoJSON(inputs.geom)::jsonb,
+          'properties', inputs.properties
+        ) AS feature
+        FROM (
+          SELECT DISTINCT ON (ea.id)
+            ea.id,
+            ea.geom,
+            jsonb_build_object(
+              'name', ea.name,
+              'areaCode', ea."areaCode",
+              'sazName', saz.name,
+              'sazType', saz.type,
+              'chiwogCode', CASE WHEN saz.type = 'chiwog' THEN saz."areaCode" ELSE NULL END,
+              'lapCode', CASE WHEN saz.type = 'lap' THEN saz."areaCode" ELSE NULL END,
+              'gewogName', CASE WHEN az.type = 'Gewog' THEN az.name ELSE NULL END,
+              'gewogCode', CASE WHEN az.type = 'Gewog' THEN az."areaCode" ELSE NULL END,
+              'thromdeName', CASE WHEN az.type = 'Thromde' THEN az.name ELSE NULL END,
+              'thromdeCode', CASE WHEN az.type = 'Thromde' THEN az."areaCode" ELSE NULL END,
+              'dzongkhagName', dz.name,
+              'dzongkhagCode', dz."areaCode"
+            ) AS properties
+          FROM "EnumerationAreas" ea
+          INNER JOIN "EnumerationAreaSubAdministrativeZones" junction 
+            ON ea.id = junction."enumerationAreaId"
+          LEFT JOIN "SubAdministrativeZones" saz 
+            ON junction."subAdministrativeZoneId" = saz.id
+          LEFT JOIN "AdministrativeZones" az 
+            ON saz."administrativeZoneId" = az.id
+          LEFT JOIN "Dzongkhags" dz 
+            ON az."dzongkhagId" = dz.id
+          WHERE junction."subAdministrativeZoneId" = ${subAdministrativeZoneId}
+            AND ea."isActive" = true
+          ORDER BY ea.id, saz.id
+        ) inputs
+      ) features;`,
     );
+
+    return data[0][0].jsonb_build_object || {
+      type: 'FeatureCollection',
+      features: [],
+    };
   }
 
   /**
