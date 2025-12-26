@@ -349,6 +349,7 @@ export class SamplingService {
                   as: 'subAdministrativeZones',  // Via junction table
                   through: { attributes: [] },
                   attributes: ['id', 'name', 'areaCode', 'type'],
+                  separate: true,  // Execute as separate query to avoid duplicate table references
                   include: [
                     {
                       model: AdministrativeZone,

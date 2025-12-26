@@ -185,7 +185,7 @@ All fields are optional. Only include fields you want to update.
 
 - `mapVisualizationMode`: Optional, must be one of: `'households'` or `'enumerationAreas'`
 - `selectedBasemapId`: Optional, string, maximum 100 characters
-- `colorScale`: Optional, must be one of: `'blue'`, `'green'`, `'red'`, `'purple'`, `'orange'`, `'gray'`, `'viridis'`, `'plasma'`
+- `colorScale`: Optional, must be one of: `'blue'`, `'green'`, `'red'`, `'purple'`, `'orange'`, `'gray'`, `'yellow'`, `'viridis'`, `'plasma'`
 - `nationalDataViewerTitle`: Optional, string, maximum 255 characters
 - `nationalDataViewerDescription`: Optional, string (text field)
 - `nationalDataViewerInfoBoxContent`: Optional, string (text field)
@@ -275,7 +275,7 @@ For frontend TypeScript projects, use these interfaces:
 interface UpdatePublicPageSettingsDto {
   mapVisualizationMode?: 'households' | 'enumerationAreas';
   selectedBasemapId?: string;
-  colorScale?: 'blue' | 'green' | 'red' | 'purple' | 'orange' | 'gray' | 'viridis' | 'plasma';
+  colorScale?: 'blue' | 'green' | 'red' | 'purple' | 'orange' | 'gray' | 'yellow' | 'viridis' | 'plasma';
   nationalDataViewerTitle?: string;
   nationalDataViewerDescription?: string;
   nationalDataViewerInfoBoxContent?: string;
@@ -435,7 +435,7 @@ All endpoints may return the following error responses:
   "statusCode": 400,
   "message": [
     "mapVisualizationMode must be one of the following values: households, enumerationAreas",
-    "colorScale must be one of the following values: blue, green, red, purple, orange, gray, viridis, plasma"
+    "colorScale must be one of the following values: blue, green, red, purple, orange, gray, yellow, viridis, plasma"
   ],
   "error": "Bad Request"
 }
@@ -488,6 +488,7 @@ The color scale used for data visualization:
 - `"purple"` - Purple color scale
 - `"orange"` - Orange color scale
 - `"gray"` - Gray color scale
+- `"yellow"` - Yellow color scale
 - `"viridis"` - Viridis color scale (perceptually uniform)
 - `"plasma"` - Plasma color scale (perceptually uniform)
 

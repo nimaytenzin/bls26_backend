@@ -20,6 +20,7 @@ export enum ColorScaleType {
   PURPLE = 'purple',
   ORANGE = 'orange',
   GRAY = 'gray',
+  YELLOW = 'yellow',
   VIRIDIS = 'viridis',
   PLASMA = 'plasma',
 }

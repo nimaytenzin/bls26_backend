@@ -17,7 +17,7 @@ export class UpdatePublicPageSettingsDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['blue', 'green', 'red', 'purple', 'orange', 'gray', 'viridis', 'plasma'])
+  @IsIn(['blue', 'green', 'red', 'purple', 'orange', 'gray', 'yellow', 'viridis', 'plasma'])
   colorScale?: string;
 
   @IsOptional()
