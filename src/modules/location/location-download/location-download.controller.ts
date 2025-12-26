@@ -209,6 +209,74 @@ export class LocationDownloadController {
   }
 
   /**
+   * Download Gewog/Thromde by Dzongkhag as GeoJSON
+   * (Alias for administrative-zones with explicit naming)
+   */
+  @Get('dzongkhag/:dzongkhagId/gewog-thromde/geojson')
+  @Header('Content-Type', 'application/geo+json')
+  @Header('Content-Disposition', 'attachment; filename="gewog_thromde_by_dzongkhag.geojson"')
+  async downloadGewogThromdeByDzongkhagAsGeoJson(
+    @Param('dzongkhagId', ParseIntPipe) dzongkhagId: number,
+    @Res() res: Response,
+  ) {
+    const geoJson = await this.locationDownloadService.downloadAZsByDzongkhagAsGeoJson(
+      dzongkhagId,
+    );
+    res.json(geoJson);
+  }
+
+  /**
+   * Download Gewog/Thromde by Dzongkhag as KML
+   * (Alias for administrative-zones with explicit naming)
+   */
+  @Get('dzongkhag/:dzongkhagId/gewog-thromde/kml')
+  @Header('Content-Type', 'application/vnd.google-earth.kml+xml')
+  @Header('Content-Disposition', 'attachment; filename="gewog_thromde_by_dzongkhag.kml"')
+  async downloadGewogThromdeByDzongkhagAsKml(
+    @Param('dzongkhagId', ParseIntPipe) dzongkhagId: number,
+    @Res() res: Response,
+  ) {
+    const kml = await this.locationDownloadService.downloadAZsByDzongkhagAsKml(
+      dzongkhagId,
+    );
+    res.send(kml);
+  }
+
+  /**
+   * Download Chiwog/LAP by Dzongkhag as GeoJSON
+   * (Alias for sub-administrative-zones with explicit naming)
+   */
+  @Get('dzongkhag/:dzongkhagId/chiwog-lap/geojson')
+  @Header('Content-Type', 'application/geo+json')
+  @Header('Content-Disposition', 'attachment; filename="chiwog_lap_by_dzongkhag.geojson"')
+  async downloadChiwogLAPByDzongkhagAsGeoJson(
+    @Param('dzongkhagId', ParseIntPipe) dzongkhagId: number,
+    @Res() res: Response,
+  ) {
+    const geoJson = await this.locationDownloadService.downloadSAZsByDzongkhagAsGeoJson(
+      dzongkhagId,
+    );
+    res.json(geoJson);
+  }
+
+  /**
+   * Download Chiwog/LAP by Dzongkhag as KML
+   * (Alias for sub-administrative-zones with explicit naming)
+   */
+  @Get('dzongkhag/:dzongkhagId/chiwog-lap/kml')
+  @Header('Content-Type', 'application/vnd.google-earth.kml+xml')
+  @Header('Content-Disposition', 'attachment; filename="chiwog_lap_by_dzongkhag.kml"')
+  async downloadChiwogLAPByDzongkhagAsKml(
+    @Param('dzongkhagId', ParseIntPipe) dzongkhagId: number,
+    @Res() res: Response,
+  ) {
+    const kml = await this.locationDownloadService.downloadSAZsByDzongkhagAsKml(
+      dzongkhagId,
+    );
+    res.send(kml);
+  }
+
+  /**
    * ADMINISTRATIVE ZONE DATA DOWNLOADS
    */
 

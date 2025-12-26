@@ -77,6 +77,93 @@ export class AnnualStatisticsDownloadController {
   }
 
   /**
+   * Download Dzongkhag sampling frame: Dzongkhag -> AZ -> SAZ -> EA
+   * @access Public, Admin, Supervisor
+   * @param dzongkhagId - Dzongkhag ID
+   * @query year - Optional year (defaults to latest available year)
+   * @route GET /annual-statistics-download/dzongkhag/:dzongkhagId/sampling-frame/csv
+   * @description Returns: Dzongkhag Name, Dzongkhag Code, Location, Gewog/Thromde Name, Gewog/Thromde Code, Chiwog/LAP Name, Chiwog/LAP Code, EA Name, EA Code, Household Count
+   * @example GET /annual-statistics-download/dzongkhag/1/sampling-frame/csv?year=2024
+   */
+  @Get('dzongkhag/:dzongkhagId/sampling-frame/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="dzongkhag_sampling_frame.csv"',
+  )
+  async downloadDzongkhagSamplingFrame(
+    @Res() res: Response,
+    @Param('dzongkhagId', ParseIntPipe) dzongkhagId: number,
+    @Query('year') year?: string,
+  ) {
+    const yearNumber = year ? parseInt(year, 10) : undefined;
+    const csv =
+      await this.annualStatisticsDownloadService.downloadDzongkhagSamplingFrame(
+        dzongkhagId,
+        yearNumber,
+      );
+    res.send(csv);
+  }
+
+  /**
+   * Download Dzongkhag rural sampling frame: Dzongkhag -> Gewog -> Chiwog -> EA
+   * @access Public, Admin, Supervisor
+   * @param dzongkhagId - Dzongkhag ID
+   * @query year - Optional year (defaults to latest available year)
+   * @route GET /annual-statistics-download/dzongkhag/:dzongkhagId/rural-sampling-frame/csv
+   * @description Returns: Dzongkhag Name, Dzongkhag Code, Gewog Name, Gewog Code, Chiwog Name, Chiwog Code, EA Name, EA Code, Household Count
+   * @example GET /annual-statistics-download/dzongkhag/1/rural-sampling-frame/csv?year=2024
+   */
+  @Get('dzongkhag/:dzongkhagId/rural-sampling-frame/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="dzongkhag_rural_sampling_frame.csv"',
+  )
+  async downloadDzongkhagRuralSamplingFrame(
+    @Res() res: Response,
+    @Param('dzongkhagId', ParseIntPipe) dzongkhagId: number,
+    @Query('year') year?: string,
+  ) {
+    const yearNumber = year ? parseInt(year, 10) : undefined;
+    const csv =
+      await this.annualStatisticsDownloadService.downloadDzongkhagRuralSamplingFrame(
+        dzongkhagId,
+        yearNumber,
+      );
+    res.send(csv);
+  }
+
+  /**
+   * Download Dzongkhag urban sampling frame: Dzongkhag -> Thromde -> LAP -> EA
+   * @access Public, Admin, Supervisor
+   * @param dzongkhagId - Dzongkhag ID
+   * @query year - Optional year (defaults to latest available year)
+   * @route GET /annual-statistics-download/dzongkhag/:dzongkhagId/urban-sampling-frame/csv
+   * @description Returns: Dzongkhag Name, Dzongkhag Code, Thromde Name, Thromde Code, LAP Name, LAP Code, EA Name, EA Code, Household Count
+   * @example GET /annual-statistics-download/dzongkhag/1/urban-sampling-frame/csv?year=2024
+   */
+  @Get('dzongkhag/:dzongkhagId/urban-sampling-frame/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="dzongkhag_urban_sampling_frame.csv"',
+  )
+  async downloadDzongkhagUrbanSamplingFrame(
+    @Res() res: Response,
+    @Param('dzongkhagId', ParseIntPipe) dzongkhagId: number,
+    @Query('year') year?: string,
+  ) {
+    const yearNumber = year ? parseInt(year, 10) : undefined;
+    const csv =
+      await this.annualStatisticsDownloadService.downloadDzongkhagUrbanSamplingFrame(
+        dzongkhagId,
+        yearNumber,
+      );
+    res.send(csv);
+  }
+
+  /**
    * Download statistics by Administrative Zone as CSV
    * @access Public, Admin, Supervisor
    * @param administrativeZoneId - Administrative Zone ID
@@ -125,6 +212,65 @@ export class AnnualStatisticsDownloadController {
     const yearNumber = year ? parseInt(year, 10) : undefined;
     const csv =
       await this.annualStatisticsDownloadService.downloadSubAdministrativeZoneStats(
+        subAdministrativeZoneId,
+        yearNumber,
+      );
+    res.send(csv);
+  }
+
+  /**
+   * Download Administrative Zone (Gewog/Thromde) sampling frame: AZ -> SAZ -> EA
+   * @access Public, Admin, Supervisor
+   * @param administrativeZoneId - Administrative Zone ID
+   * @query year - Optional year (defaults to latest available year)
+   * @route GET /annual-statistics-download/administrative-zone/:administrativeZoneId/sampling-frame/csv
+   * @description Returns: Gewog/Thromde Name, Gewog/Thromde Code, Chiwog/LAP Name, Chiwog/LAP Code, EA Name, EA Code, Household Count
+   * @example GET /annual-statistics-download/administrative-zone/1/sampling-frame/csv?year=2024
+   */
+  @Get('administrative-zone/:administrativeZoneId/sampling-frame/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="administrative_zone_sampling_frame.csv"',
+  )
+  async downloadAdministrativeZoneSamplingFrame(
+    @Res() res: Response,
+    @Param('administrativeZoneId', ParseIntPipe) administrativeZoneId: number,
+    @Query('year') year?: string,
+  ) {
+    const yearNumber = year ? parseInt(year, 10) : undefined;
+    const csv =
+      await this.annualStatisticsDownloadService.downloadAdministrativeZoneSamplingFrame(
+        administrativeZoneId,
+        yearNumber,
+      );
+    res.send(csv);
+  }
+
+  /**
+   * Download Sub-Administrative Zone (Chiwog/LAP) sampling frame: SAZ -> EA
+   * @access Public, Admin, Supervisor
+   * @param subAdministrativeZoneId - Sub-Administrative Zone ID
+   * @query year - Optional year (defaults to latest available year)
+   * @route GET /annual-statistics-download/sub-administrative-zone/:subAdministrativeZoneId/sampling-frame/csv
+   * @description Returns: Chiwog/LAP Name, Chiwog/LAP Code, EA Name, EA Code, Household Count
+   * @example GET /annual-statistics-download/sub-administrative-zone/1/sampling-frame/csv?year=2024
+   */
+  @Get('sub-administrative-zone/:subAdministrativeZoneId/sampling-frame/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="sub_administrative_zone_sampling_frame.csv"',
+  )
+  async downloadSubAdministrativeZoneSamplingFrame(
+    @Res() res: Response,
+    @Param('subAdministrativeZoneId', ParseIntPipe)
+    subAdministrativeZoneId: number,
+    @Query('year') year?: string,
+  ) {
+    const yearNumber = year ? parseInt(year, 10) : undefined;
+    const csv =
+      await this.annualStatisticsDownloadService.downloadSubAdministrativeZoneSamplingFrame(
         subAdministrativeZoneId,
         yearNumber,
       );
