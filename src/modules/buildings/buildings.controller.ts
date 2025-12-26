@@ -19,15 +19,20 @@ export class BuildingsController {
   constructor(private readonly buildingsService: BuildingsService) {}
 
   /**
-   * Get buildings by enumeration area ID
+   * Get buildings by enumeration area ID(s)
    * @access Public
-   * @param enumerationAreaId - Enumeration Area ID
+   * @param enumerationAreaId - Enumeration Area ID(s) - can be a single ID or comma-separated IDs (e.g., "1,2,3")
    */
   @Get('by-enumeration-area/:enumerationAreaId')
   async findByEnumerationArea(
     @Param('enumerationAreaId') enumerationAreaId: string,
   ) {
-    return this.buildingsService.findByEnumerationArea(+enumerationAreaId);
+    const eaIds = enumerationAreaId
+      .split(',')
+      .map((id) => +id.trim())
+      .filter((id) => !isNaN(id) && id > 0);
+    
+    return this.buildingsService.findByEnumerationArea(eaIds);
   }
 
   /**

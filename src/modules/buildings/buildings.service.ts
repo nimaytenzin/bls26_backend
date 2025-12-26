@@ -15,40 +15,47 @@ export class BuildingsService {
   ) {}
 
   /**
-   * Find all buildings in a specific enumeration area as GeoJSON
-   * @param enumerationAreaId - Enumeration Area ID
+   * Find all buildings in enumeration area(s) as GeoJSON
+   * @param enumerationAreaIds - Array of Enumeration Area IDs
    * @returns GeoJSON FeatureCollection
    */
-  async findByEnumerationArea(enumerationAreaId: number): Promise<any> {
+  async findByEnumerationArea(enumerationAreaIds: number[]): Promise<any> {
+    if (!enumerationAreaIds || enumerationAreaIds.length === 0) {
+      return {
+        type: 'FeatureCollection',
+        features: [],
+      };
+    }
+
     const data: any = await this.sequelize.query(
       `SELECT jsonb_build_object(
         'type',     'FeatureCollection',
-        'features', jsonb_agg(features.feature)
+        'features', COALESCE(jsonb_agg(features.feature), '[]'::jsonb)
       )
       FROM (
         SELECT jsonb_build_object(
           'type',       'Feature',
           'geometry',   ST_AsGeoJSON(geom)::jsonb,
-          'properties', to_jsonb(inputs) - 'geometry'
+          'properties', to_jsonb(inputs) - 'geom'
         ) AS feature
         FROM (
           SELECT * FROM public."buildingGeom" 
-          WHERE "eaId" = :eaId
+          WHERE "eaId" = ANY(ARRAY[${enumerationAreaIds.join(',')}])
         ) inputs
       ) features;`,
       {
-        replacements: { eaId: enumerationAreaId },
         type: QueryTypes.SELECT,
       },
     );
 
     // Extract the GeoJSON FeatureCollection from the query result
-    const featureCollection = data[0]?.[0];
-
-    return featureCollection?.jsonb_build_object || {
+    // When using QueryTypes.SELECT, result is array of rows, each row has jsonb_build_object key
+    const result = data[0]?.jsonb_build_object || {
       type: 'FeatureCollection',
       features: [],
     };
+
+    return result;
   }
 
   /**
