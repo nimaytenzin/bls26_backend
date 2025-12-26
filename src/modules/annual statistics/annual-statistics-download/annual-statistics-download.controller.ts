@@ -411,5 +411,31 @@ export class AnnualStatisticsDownloadController {
       );
     res.send(csv);
   }
+
+  /**
+   * Download full hierarchy (combined rural and urban): Dzongkhag -> Gewog/Thromde -> Chiwog/LAP -> EA for national data viewer
+   * @access Public
+   * @query year - Optional year (defaults to latest available year)
+   * @route GET /annual-statistics-download/national-viewer/full-hierarchy/csv
+   * @description Returns: Dzongkhag Name, Dzongkhag Code, Location, Gewog/Thromde Name, Gewog/Thromde Code, Chiwog/LAP Name, Chiwog/LAP Code, EA Name, EA Code, Household Count (Location: R=Rural, U=Urban)
+   * @example GET /annual-statistics-download/national-viewer/full-hierarchy/csv?year=2024
+   */
+  @Get('national-viewer/full-hierarchy/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="national_viewer_full_hierarchy.csv"',
+  )
+  async downloadFullHierarchyForNationalViewer(
+    @Res() res: Response,
+    @Query('year') year?: string,
+  ) {
+    const yearNumber = year ? parseInt(year, 10) : undefined;
+    const csv =
+      await this.annualStatisticsDownloadService.downloadFullHierarchyForNationalViewer(
+        yearNumber,
+      );
+    res.send(csv);
+  }
 }
 
