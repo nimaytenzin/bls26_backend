@@ -27,6 +27,7 @@ import { SAZAnnualStatsService } from '../sub-administrative-zone-annual-statist
 import { AZAnnualStatsService } from '../administrative-zone-annual-statistics/az-annual-stats.service';
 import { EAAnnualStatsService } from '../ea-annual-statistics/ea-annual-stats.service';
 import { Cron } from '@nestjs/schedule';
+import { QueryTypes } from 'sequelize';
 import { SurveyEnumerationArea } from '../../survey/survey-enumeration-area/entities/survey-enumeration-area.entity';
 import { SurveyEnumerationAreaHouseholdListing } from '../../survey/survey-enumeration-area-household-listing/entities/survey-enumeration-area-household-listing.entity';
 
@@ -160,11 +161,51 @@ export class DzongkhagAnnualStatsService {
     let totalUrbanHouseholds = 0;
     let totalRuralHouseholds = 0;
 
-    // Step 1: Get all Dzongkhags
+    // Step 1: Pre-fetch all EA survey data in bulk to avoid N+1 queries
+    this.logger.log('Pre-fetching all EA survey data...');
+    const eaSurveyDataMap = new Map<number, { households: number; male: number; female: number }>();
+    
+    const bulkSurveyData = await SurveyEnumerationAreaHouseholdListing.sequelize.query(
+      `SELECT 
+        sea."enumerationAreaId",
+        COALESCE(COUNT(hl.id), 0) as households_count,
+        COALESCE(SUM(hl."totalMale"), 0) as total_male,
+        COALESCE(SUM(hl."totalFemale"), 0) as total_female
+      FROM (
+        SELECT DISTINCT ON ("enumerationAreaId")
+          id,
+          "enumerationAreaId"
+        FROM "SurveyEnumerationAreas"
+        WHERE "isPublished" = true
+        ORDER BY "enumerationAreaId", "publishedDate" DESC NULLS LAST
+      ) latest_sea
+      INNER JOIN "SurveyEnumerationAreas" sea ON latest_sea.id = sea.id
+      LEFT JOIN "SurveyEnumerationAreaHouseholdListings" hl ON sea.id = hl."surveyEnumerationAreaId"
+      GROUP BY sea."enumerationAreaId"`,
+      {
+        type: QueryTypes.SELECT,
+      },
+    ) as Array<{
+      enumerationAreaId: number;
+      households_count: string;
+      total_male: string;
+      total_female: string;
+    }>;
+
+    for (const row of bulkSurveyData) {
+      eaSurveyDataMap.set(row.enumerationAreaId, {
+        households: parseInt(row.households_count) || 0,
+        male: parseInt(row.total_male) || 0,
+        female: parseInt(row.total_female) || 0,
+      });
+    }
+    this.logger.log(`Pre-fetched survey data for ${eaSurveyDataMap.size} EAs`);
+
+    // Step 2: Get all Dzongkhags
     const dzongkhags = await Dzongkhag.findAll();
     this.logger.log(`Processing ${dzongkhags.length} Dzongkhags`);
 
-    // Step 2: Iterate through each Dzongkhag
+    // Step 3: Iterate through each Dzongkhag
     for (const dzongkhag of dzongkhags) {
       // Dzongkhag-level accumulators
       let dzTotalHouseholds = 0;
@@ -251,30 +292,11 @@ export class DzongkhagAnnualStatsService {
               dzRuralEACount++;
             }
 
-            // Step 6: Get latest published survey data and create EA Annual Stats
-            const latestPublishedSurveyEA = await SurveyEnumerationArea.findOne({
-              where: { enumerationAreaId: ea.id, isPublished: true },
-              order: [['publishedDate', 'DESC']],
-            });
-
-            let householdsCount = 0;
-            let totalMale = 0;
-            let totalFemale = 0;
-
-            if (latestPublishedSurveyEA) {
-              householdsCount =
-                (await SurveyEnumerationAreaHouseholdListing.count({
-                  where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
-                })) || 0;
-              totalMale =
-                (await SurveyEnumerationAreaHouseholdListing.sum('totalMale', {
-                  where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
-                })) || 0;
-              totalFemale =
-                (await SurveyEnumerationAreaHouseholdListing.sum('totalFemale', {
-                  where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
-                })) || 0;
-            }
+            // Step 7: Get survey data from pre-fetched map (no database query needed)
+            const surveyData = eaSurveyDataMap.get(ea.id) || { households: 0, male: 0, female: 0 };
+            const householdsCount = surveyData.households;
+            const totalMale = surveyData.male;
+            const totalFemale = surveyData.female;
 
             // Create/Update EA Annual Stats record (always create entry even with zero values)
             await this.eaAnnualStatsService.create({
@@ -412,11 +434,51 @@ export class DzongkhagAnnualStatsService {
     let sazCount = 0;
     let eaCount = 0;
 
-    // Step 1: Get all Dzongkhags
+    // Step 1: Pre-fetch all EA survey data in bulk to avoid N+1 queries
+    this.logger.log('Pre-fetching all EA survey data...');
+    const eaSurveyDataMap = new Map<number, { households: number; male: number; female: number }>();
+    
+    const bulkSurveyData = await SurveyEnumerationAreaHouseholdListing.sequelize.query(
+      `SELECT 
+        sea."enumerationAreaId",
+        COALESCE(COUNT(hl.id), 0) as households_count,
+        COALESCE(SUM(hl."totalMale"), 0) as total_male,
+        COALESCE(SUM(hl."totalFemale"), 0) as total_female
+      FROM (
+        SELECT DISTINCT ON ("enumerationAreaId")
+          id,
+          "enumerationAreaId"
+        FROM "SurveyEnumerationAreas"
+        WHERE "isPublished" = true
+        ORDER BY "enumerationAreaId", "publishedDate" DESC NULLS LAST
+      ) latest_sea
+      INNER JOIN "SurveyEnumerationAreas" sea ON latest_sea.id = sea.id
+      LEFT JOIN "SurveyEnumerationAreaHouseholdListings" hl ON sea.id = hl."surveyEnumerationAreaId"
+      GROUP BY sea."enumerationAreaId"`,
+      {
+        type: QueryTypes.SELECT,
+      },
+    ) as Array<{
+      enumerationAreaId: number;
+      households_count: string;
+      total_male: string;
+      total_female: string;
+    }>;
+
+    for (const row of bulkSurveyData) {
+      eaSurveyDataMap.set(row.enumerationAreaId, {
+        households: parseInt(row.households_count) || 0,
+        male: parseInt(row.total_male) || 0,
+        female: parseInt(row.total_female) || 0,
+      });
+    }
+    this.logger.log(`Pre-fetched survey data for ${eaSurveyDataMap.size} EAs`);
+
+    // Step 2: Get all Dzongkhags
     const dzongkhags = await Dzongkhag.findAll();
     this.logger.log(`Processing ${dzongkhags.length} Dzongkhags`);
 
-    // Step 2: Iterate through each Dzongkhag
+    // Step 3: Iterate through each Dzongkhag
     for (const dzongkhag of dzongkhags) {
       // Dzongkhag-level accumulators
       let dzTotalHouseholds = 0;
@@ -505,30 +567,11 @@ export class DzongkhagAnnualStatsService {
               dzRuralEACount++;
             }
 
-            // Step 6: Get latest published survey data and create EA Annual Stats
-            const latestPublishedSurveyEA = await SurveyEnumerationArea.findOne({
-              where: { enumerationAreaId: ea.id, isPublished: true },
-              order: [['publishedDate', 'DESC']],
-            });
-
-            let householdsCount = 0;
-            let totalMale = 0;
-            let totalFemale = 0;
-
-            if (latestPublishedSurveyEA) {
-              householdsCount =
-                (await SurveyEnumerationAreaHouseholdListing.count({
-                  where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
-                })) || 0;
-              totalMale =
-                (await SurveyEnumerationAreaHouseholdListing.sum('totalMale', {
-                  where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
-                })) || 0;
-              totalFemale =
-                (await SurveyEnumerationAreaHouseholdListing.sum('totalFemale', {
-                  where: { surveyEnumerationAreaId: latestPublishedSurveyEA.id },
-                })) || 0;
-            }
+            // Step 7: Get survey data from pre-fetched map (no database query needed)
+            const surveyData = eaSurveyDataMap.get(ea.id) || { households: 0, male: 0, female: 0 };
+            const householdsCount = surveyData.households;
+            const totalMale = surveyData.male;
+            const totalFemale = surveyData.female;
 
             // Create/Update EA Annual Stats record (always create entry even with zero values)
             await this.eaAnnualStatsService.create({
