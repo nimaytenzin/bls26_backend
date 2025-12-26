@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { GeographicStatisticalCodeResponse } from './geographic-statistical-code.dto';
-import * as PdfPrinter from 'pdfmake';
+import PdfPrinter from 'pdfmake';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -60,14 +60,15 @@ export class PdfGeneratorService {
       
       return new Promise<Buffer>((resolve, reject) => {
         const pdfDoc = printer.createPdfKitDocument(docDefinition);
-        const chunks: Buffer[] = [];
+        const chunks: any[] = [];
 
-        pdfDoc.on('data', (chunk: Buffer) => {
-          chunks.push(chunk);
+        pdfDoc.on('data', (chunk: any) => {
+          chunks.push(Buffer.from(chunk));
         });
 
         pdfDoc.on('end', () => {
-          resolve(Buffer.concat(chunks));
+          const buffer = Buffer.concat(chunks);
+          resolve(buffer);
         });
 
         pdfDoc.on('error', (error: Error) => {
