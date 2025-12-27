@@ -14,6 +14,8 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Header,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Express } from 'express';
@@ -31,6 +33,7 @@ import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { UserRole } from '../../auth/entities/user.entity';
 import { PaginationQueryDto } from '../../../common/utils/pagination.util';
+import { Response } from 'express';
 
 @Controller('survey')
 export class SurveyController {
@@ -297,6 +300,28 @@ export class SurveyController {
     @Param('id') id: string,
   ): Promise<SurveyEnumerationHierarchyDto> {
     return this.surveyService.getSurveyEnumerationHierarchy(+id);
+  }
+
+  /**
+   * Download survey household counts by EA as CSV
+   * Includes full geographic hierarchy: Dzongkhag, Gewog/Thromde, Chiwog/LAP, EA
+   * @param id - Survey ID
+   * @param res - Express response object
+   * @access Admin only
+   */
+  @Get(':id/download/household-counts')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Header('Content-Type', 'text/csv')
+  async downloadSurveyHouseholdCountsCSV(
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const csvContent = await this.surveyService.generateSurveyHouseholdCountCSV(+id);
+    res.set({
+      'Content-Disposition': `attachment; filename="survey_${id}_household_counts_${Date.now()}.csv"`,
+    });
+    res.send(csvContent);
   }
 
   @Get('supervisor/:supervisorId/active')

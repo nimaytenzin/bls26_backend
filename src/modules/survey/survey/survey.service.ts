@@ -1865,4 +1865,155 @@ export class SurveyService {
       hierarchy,
     };
   }
+
+  /**
+   * Generate CSV export for survey household counts by EA with geographic hierarchy
+   * Includes ALL households regardless of enumeration, sampling, or publication status
+   * @param surveyId - Survey ID
+   * @returns CSV content as string
+   */
+  async generateSurveyHouseholdCountCSV(surveyId: number): Promise<string> {
+    // Verify survey exists
+    const survey = await this.surveyRepository.findByPk(surveyId);
+    if (!survey) {
+      throw new NotFoundException(`Survey with ID ${surveyId} not found`);
+    }
+
+    // Get all survey enumeration areas for this survey (regardless of status)
+    const surveyEAs = await this.surveyEnumerationAreaRepository.findAll({
+      where: { surveyId },
+      attributes: ['id', 'enumerationAreaId'],
+    });
+
+    if (surveyEAs.length === 0) {
+      // Return CSV with headers only if no data
+      const headers = [
+        'Dzongkhag',
+        'Dzongkhag Code',
+        'Location',
+        'Gewog/Thromde',
+        'Gewog/Thromde Code',
+        'Chiwog/LAP',
+        'Chiwog/Lap Code',
+        'EA',
+        'EA Code',
+        'Household Count',
+      ];
+      return headers.map((h) => `"${h}"`).join(',');
+    }
+
+    // Get enumeration area IDs
+    const enumerationAreaIds = surveyEAs.map((sea) => sea.enumerationAreaId);
+
+    // Load EnumerationAreas with full hierarchy separately (more reliable)
+    const enumerationAreas = await EnumerationArea.findAll({
+      where: { id: enumerationAreaIds },
+      attributes: { exclude: ['geom'] },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',
+          through: { attributes: [] },
+          attributes: { exclude: ['geom'] },
+          include: [
+            {
+              model: AdministrativeZone,
+              attributes: { exclude: ['geom'] },
+              include: [
+                {
+                  model: Dzongkhag,
+                  attributes: { exclude: ['geom'] },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    // Create a map of enumerationAreaId -> EnumerationArea for quick lookup
+    const eaMap = new Map<number, EnumerationArea>();
+    enumerationAreas.forEach((ea) => {
+      eaMap.set(ea.id, ea);
+    });
+
+    // Get household counts for each survey EA
+    // Counts ALL households regardless of enumeration, sampling, or publication status
+    const surveyEAIds = surveyEAs.map((sea) => sea.id);
+    const countMap = new Map<number, number>();
+
+    // Count all households for each survey EA (no status filters)
+    for (const surveyEAId of surveyEAIds) {
+      const count = await this.householdListingRepository.count({
+        where: { surveyEnumerationAreaId: surveyEAId },
+        // No filters - includes all households regardless of status
+      });
+      countMap.set(surveyEAId, count);
+    }
+
+    // CSV Headers
+    const headers = [
+      'Dzongkhag',
+      'Dzongkhag Code',
+      'Location',
+      'Gewog/Thromde',
+      'Gewog/Thromde Code',
+      'Chiwog/LAP',
+      'Chiwog/Lap Code',
+      'EA',
+      'EA Code',
+      'Household Count',
+    ];
+
+    // Build CSV rows
+    const csvRows: string[] = [];
+
+    surveyEAs.forEach((surveyEA) => {
+      const ea = eaMap.get(surveyEA.enumerationAreaId);
+      if (!ea || !ea.subAdministrativeZones || ea.subAdministrativeZones.length === 0) {
+        return; // Skip if no hierarchy data
+      }
+
+      // Get first SAZ (EA can have multiple SAZs, but we'll use the first one)
+      const firstSAZ = ea.subAdministrativeZones[0];
+      const az = firstSAZ.administrativeZone;
+      const dzongkhag = az?.dzongkhag;
+
+      if (!az || !dzongkhag) {
+        return; // Skip if missing hierarchy
+      }
+
+      // Determine location type (Urban if Thromde, Rural if Gewog)
+      const locationType = az.type === 'Thromde' ? 'Urban' : 'Rural';
+
+      // Get household count for this survey EA
+      const householdCount = countMap.get(surveyEA.id) || 0;
+
+      // Build CSV row
+      const row = [
+        dzongkhag.name || '',
+        (dzongkhag.areaCode || '').padStart(2, '0'),
+        locationType,
+        az.name || '',
+        (az.areaCode || '').padStart(2, '0'),
+        firstSAZ.name || '',
+        (firstSAZ.areaCode || '').padStart(2, '0'),
+        ea.name || '',
+        (ea.areaCode || '').padStart(2, '0'),
+        householdCount.toString(),
+      ]
+        .map((field) => `"${String(field).replace(/"/g, '""')}"`)
+        .join(',');
+
+      csvRows.push(row);
+    });
+
+    // Combine headers and rows
+    const csvContent = [
+      headers.map((h) => `"${h}"`).join(','),
+      ...csvRows,
+    ].join('\n');
+
+    return csvContent;
+  }
 }
