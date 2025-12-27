@@ -22,6 +22,11 @@ import { SubAdministrativeZone } from 'src/modules/location/sub-administrative-z
 import { AdministrativeZone } from 'src/modules/location/administrative-zone/entities/administrative-zone.entity';
 import { Dzongkhag } from 'src/modules/location/dzongkhag/entities/dzongkhag.entity';
 import { BulkUploadEaResponseDto } from './dto/bulk-upload-ea.dto';
+import {
+  BulkMatchEaResponseDto,
+  BulkMatchEaRowMatch,
+  BulkMatchEaRowError,
+} from './dto/bulk-match-ea.dto';
 import { EAAnnualStatsService } from '../../annual statistics/ea-annual-statistics/ea-annual-stats.service';
 import { DzongkhagAnnualStatsService } from '../../annual statistics/dzongkhag-annual-statistics/dzongkhag-annual-stats.service';
 
@@ -1101,6 +1106,231 @@ export class SurveyEnumerationAreaService {
     console.log('[Bulk Upload] Upload complete!');
     console.log('[Bulk Upload] Result:', result);
     console.log('[Bulk Upload] ========================================');
+    return result;
+  }
+
+  /**
+   * Find enumeration area with full hierarchy information by codes
+   * Used for bulk matching to return detailed information
+   * @param dzongkhagCode - Dzongkhag area code
+   * @param adminZoneCode - Administrative zone area code
+   * @param subAdminZoneCode - Sub-administrative zone area code
+   * @param enumerationCode - Enumeration area code
+   * @returns Enumeration area with hierarchy or null
+   */
+  private async findEnumerationAreaByCodesWithHierarchy(
+    dzongkhagCode: string,
+    adminZoneCode: string,
+    subAdminZoneCode: string,
+    enumerationCode: string,
+  ): Promise<{
+    enumerationArea: EnumerationArea;
+    subAdminZone: SubAdministrativeZone;
+    adminZone: AdministrativeZone;
+    dzongkhag: Dzongkhag;
+  } | null> {
+    // Step 1: Find dzongkhag
+    const dzongkhag = await this.dzongkhagRepository.findOne({
+      where: { areaCode: dzongkhagCode },
+    });
+
+    if (!dzongkhag) {
+      return null;
+    }
+
+    // Step 2: Find administrative zone
+    const adminZone = await AdministrativeZone.findOne({
+      where: {
+        areaCode: adminZoneCode,
+        dzongkhagId: dzongkhag.id,
+      },
+    });
+
+    if (!adminZone) {
+      return null;
+    }
+
+    // Step 3: Find sub-administrative zone
+    const subAdminZone = await SubAdministrativeZone.findOne({
+      where: {
+        areaCode: subAdminZoneCode,
+        administrativeZoneId: adminZone.id,
+      },
+    });
+
+    if (!subAdminZone) {
+      return null;
+    }
+
+    // Step 4: Find enumeration area via junction table
+    const enumerationArea = await EnumerationArea.findOne({
+      where: {
+        areaCode: enumerationCode,
+      },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones', // Via junction table
+          where: { id: subAdminZone.id },
+          through: { attributes: [] },
+        },
+      ],
+    });
+
+    if (!enumerationArea) {
+      return null;
+    }
+
+    return {
+      enumerationArea,
+      subAdminZone,
+      adminZone,
+      dzongkhag,
+    };
+  }
+
+  /**
+   * Bulk match enumeration areas from CSV file (without survey ID)
+   * Used during survey creation workflow to validate and match enumeration areas
+   * before survey is created. Returns matched enumeration areas with full hierarchy.
+   * @param csvContent - CSV file content as string
+   * @returns Match result with matched enumeration areas and errors
+   */
+  async bulkMatchFromCSV(
+    csvContent: string,
+  ): Promise<BulkMatchEaResponseDto> {
+    console.log('[Bulk Match] ========================================');
+    console.log('[Bulk Match] Starting bulk match (no survey ID)');
+    console.log('[Bulk Match] ========================================');
+
+    // Parse CSV
+    console.log('[Bulk Match] Parsing CSV...');
+    const rows = this.parseCSV(csvContent);
+    console.log('[Bulk Match] Parsed rows:', rows.length);
+
+    if (rows.length === 0) {
+      console.error('[Bulk Match] ❌ No data rows found in CSV');
+      throw new BadRequestException('CSV file contains no data rows');
+    }
+
+    const result: BulkMatchEaResponseDto = {
+      success: true,
+      totalRows: rows.length,
+      matched: 0,
+      failed: 0,
+      errors: [],
+      matches: [],
+      matchedEnumerationAreaIds: [],
+    };
+
+    const matchedEaIds = new Set<number>();
+
+    // Process each row
+    console.log('[Bulk Match] Processing', rows.length, 'rows...');
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowNumber = i + 2; // +2 because row 1 is header
+
+      console.log(`[Bulk Match] --- Processing row ${rowNumber} ---`);
+
+      try {
+        // Validate required fields
+        if (
+          !row.dzongkhagCode ||
+          !row.adminZoneCode ||
+          !row.subAdminZoneCode ||
+          !row.enumerationCode
+        ) {
+          console.log(`[Bulk Match] ❌ Row ${rowNumber}: Missing required codes`);
+          const error: BulkMatchEaRowError = {
+            row: rowNumber,
+            dzongkhagCode: row.dzongkhagCode || '',
+            gewogThromdeCode: row.adminZoneCode || '',
+            chiwogLapCode: row.subAdminZoneCode || '',
+            eaCode: row.enumerationCode || '',
+            error: 'Missing required codes',
+          };
+          result.errors.push(error);
+          result.failed++;
+          continue;
+        }
+
+        // Find enumeration area with hierarchy
+        console.log(`[Bulk Match] Row ${rowNumber}: Looking up enumeration area with hierarchy...`);
+        const hierarchy = await this.findEnumerationAreaByCodesWithHierarchy(
+          row.dzongkhagCode,
+          row.adminZoneCode,
+          row.subAdminZoneCode,
+          row.enumerationCode,
+        );
+
+        if (!hierarchy) {
+          console.log(`[Bulk Match] ❌ Row ${rowNumber}: Enumeration area not found`);
+          const error: BulkMatchEaRowError = {
+            row: rowNumber,
+            dzongkhagCode: row.dzongkhagCode,
+            gewogThromdeCode: row.adminZoneCode,
+            chiwogLapCode: row.subAdminZoneCode,
+            eaCode: row.enumerationCode,
+            error: 'Enumeration area not found with these codes',
+          };
+          result.errors.push(error);
+          result.failed++;
+          continue;
+        }
+
+        const { enumerationArea, subAdminZone, adminZone, dzongkhag } = hierarchy;
+
+        // Create match record
+        const match: BulkMatchEaRowMatch = {
+          row: rowNumber,
+          enumerationAreaId: enumerationArea.id,
+          enumerationAreaName: enumerationArea.name,
+          enumerationAreaCode: enumerationArea.areaCode,
+          subAdminZoneName: subAdminZone.name,
+          adminZoneName: adminZone.name,
+          dzongkhagName: dzongkhag.name,
+          codes: {
+            dzongkhagCode: row.dzongkhagCode,
+            adminZoneCode: row.adminZoneCode,
+            subAdminZoneCode: row.subAdminZoneCode,
+            enumerationCode: row.enumerationCode,
+          },
+        };
+
+        console.log(`[Bulk Match] ✅ Row ${rowNumber}: Successfully matched`);
+        result.matches.push(match);
+        result.matched++;
+        matchedEaIds.add(enumerationArea.id);
+      } catch (error) {
+        console.error(`[Bulk Match] ❌ Row ${rowNumber}: Error:`, error.message);
+        console.error(`[Bulk Match] Error stack:`, error.stack);
+        const errorRecord: BulkMatchEaRowError = {
+          row: rowNumber,
+          dzongkhagCode: row.dzongkhagCode || '',
+          gewogThromdeCode: row.adminZoneCode || '',
+          chiwogLapCode: row.subAdminZoneCode || '',
+          eaCode: row.enumerationCode || '',
+          error: error.message || 'Unknown error',
+        };
+        result.errors.push(errorRecord);
+        result.failed++;
+      }
+    }
+
+    // Convert Set to Array for matched IDs
+    result.matchedEnumerationAreaIds = Array.from(matchedEaIds);
+
+    result.success = result.failed === 0;
+    console.log('[Bulk Match] ========================================');
+    console.log('[Bulk Match] Match complete!');
+    console.log('[Bulk Match] Result:', {
+      totalRows: result.totalRows,
+      matched: result.matched,
+      failed: result.failed,
+      uniqueEAs: result.matchedEnumerationAreaIds.length,
+    });
+    console.log('[Bulk Match] ========================================');
     return result;
   }
 }

@@ -262,6 +262,59 @@ export class SurveyEnumerationAreaController {
   }
 
   /**
+   * Bulk match enumeration areas from CSV file (for survey creation workflow)
+   * Validates and matches enumeration areas from CSV without requiring a survey ID.
+   * Returns matched enumeration areas with full hierarchy information.
+   * CSV should contain: Dzongkhag Code, Admin Zone Code, Sub Admin Zone Code, Enumeration Code
+   * @param file - CSV file
+   * @returns Match result with matched enumeration areas and errors
+   * @access Admin only
+   */
+  @Post('bulk-match')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+      fileFilter: (req, file, cb) => {
+        if (
+          file.mimetype === 'text/csv' ||
+          file.mimetype === 'application/vnd.ms-excel' ||
+          file.originalname.endsWith('.csv')
+        ) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              'Invalid file type. Only .csv files are allowed.',
+            ),
+            false,
+          );
+        }
+      },
+    }),
+  )
+  async bulkMatchFromCSV(@UploadedFile() file: any) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    try {
+      // Parse the CSV file
+      const csvContent = file.buffer.toString('utf-8');
+      const result = await this.surveyEnumerationAreaService.bulkMatchFromCSV(
+        csvContent,
+      );
+
+      return result;
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to process CSV file: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Bulk upload enumeration areas from CSV file
    * CSV should contain: Dzongkhag Code, Admin Zone Code, Sub Admin Zone Code, Enumeration Code
    * @param surveyId - Survey ID to assign enumeration areas to
