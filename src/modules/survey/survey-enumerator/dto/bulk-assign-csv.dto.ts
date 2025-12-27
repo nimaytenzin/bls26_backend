@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsArray, ValidateNested } from 'class-validator';
+import { IsInt, IsNotEmpty, IsArray, ValidateNested, IsOptional, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class EnumeratorCsvRowDto {
@@ -8,6 +8,7 @@ export class EnumeratorCsvRowDto {
   phoneNumber?: string;
   password?: string;
   role?: string;
+  dzongkhagCode: string; // Dzongkhag code (e.g., "01", "02")
 }
 
 export class BulkAssignFromCsvDto {

@@ -3,12 +3,14 @@ import {
   Inject,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { CreateSurveyEnumeratorDto } from './dto/create-survey-enumerator.dto';
 import { UpdateSurveyEnumeratorDto } from './dto/update-survey-enumerator.dto';
 import { SurveyEnumerator } from './entities/survey-enumerator.entity';
 import { User, UserRole } from 'src/modules/auth/entities/user.entity';
 import { Survey } from '../survey/entities/survey.entity';
+import { Dzongkhag } from 'src/modules/location/dzongkhag/entities/dzongkhag.entity';
 import * as bcrypt from 'bcrypt';
 import { EnumeratorCsvRowDto } from './dto/bulk-assign-csv.dto';
 
@@ -19,6 +21,8 @@ export class SurveyEnumeratorService {
     private readonly surveyEnumeratorRepository: typeof SurveyEnumerator,
     @Inject('USER_REPOSITORY')
     private readonly userRepository: typeof User,
+    @Inject('DZONGKHAG_REPOSITORY')
+    private readonly dzongkhagRepository: typeof Dzongkhag,
   ) {}
 
   async create(
@@ -164,9 +168,9 @@ export class SurveyEnumeratorService {
 
   /**
    * Bulk assign enumerators from CSV data
-   * Creates users if they don't exist and assigns them to the survey
+   * Creates users if they don't exist and assigns them to the survey with dzongkhag assignment
    * @param surveyId
-   * @param enumerators - Array of enumerator data from CSV
+   * @param enumerators - Array of enumerator data from CSV (includes dzongkhagCode)
    */
   async bulkAssignFromCsv(
     surveyId: number,
@@ -186,6 +190,34 @@ export class SurveyEnumeratorService {
 
     for (const enumeratorData of enumerators) {
       try {
+        // Normalize dzongkhag code (convert to two-character string if numeric)
+        const normalizeCode = (code: string | number): string => {
+          const strValue = String(code || '').trim();
+          if (!strValue) return '';
+          if (/^\d+$/.test(strValue)) {
+            return strValue.padStart(2, '0');
+          }
+          return strValue;
+        };
+
+        const dzongkhagCode = normalizeCode(enumeratorData.dzongkhagCode);
+
+        // Find dzongkhag by code
+        let dzongkhagId: number | null = null;
+        if (dzongkhagCode) {
+          const dzongkhag = await this.dzongkhagRepository.findOne({
+            where: { areaCode: dzongkhagCode },
+          });
+          if (!dzongkhag) {
+            errors.push({
+              enumerator: enumeratorData,
+              error: `Dzongkhag with code "${dzongkhagCode}" not found`,
+            });
+            continue;
+          }
+          dzongkhagId = dzongkhag.id;
+        }
+
         // Check if user exists by CID
         let user = await this.userRepository.findOne({
           where: { cid: enumeratorData.cid },
@@ -216,10 +248,11 @@ export class SurveyEnumeratorService {
           existingUsers++;
         }
 
-        // Assign user to survey
+        // Assign user to survey with dzongkhag
         const assignment = await this.surveyEnumeratorRepository.create({
           userId: user.id,
           surveyId,
+          dzongkhagId: dzongkhagId || null,
         });
 
         assignments.push(assignment);
@@ -246,7 +279,7 @@ export class SurveyEnumeratorService {
 
   /**
    * Generate CSV template for bulk upload of enumerators
-   * Template includes: Name, CID, Email Address, Phone Number, Password
+   * Template includes: Name, CID, Email Address, Phone Number, Password, Dzongkhag Code
    * @returns CSV template string
    */
   async generateCSVTemplate(): Promise<string> {
@@ -256,6 +289,7 @@ export class SurveyEnumeratorService {
       'Email Address',
       'Phone Number',
       'Password',
+      'Dzongkhag Code',
     ];
 
     // Add example row
@@ -265,6 +299,7 @@ export class SurveyEnumeratorService {
       'nima.yoezer@example.com', // Example email (optional)
       '17123456', // Example phone number (optional)
       '', // Password (optional - will use CID if not provided)
+      '01', // Example Dzongkhag Code (e.g., "01", "02", "10")
     ];
 
     return `${headers.join(',')}\n${exampleRow.join(',')}`;

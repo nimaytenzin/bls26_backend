@@ -22,8 +22,8 @@ import { SurveyEnumerationAreaStructure } from '../../survey-enumeration-area-st
   indexes: [
     {
       unique: true,
-      fields: ['surveyEnumerationAreaId', 'householdSerialNumber'],
-      name: 'unique_sea_household_serial',
+      fields: ['surveyEnumerationAreaId', 'structureId', 'householdSerialNumber'],
+      name: 'unique_sea_structure_household_serial',
     },
     {
       fields: ['surveyEnumerationAreaId'],

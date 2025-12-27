@@ -50,12 +50,32 @@ export class SurveyEnumerationAreaHouseholdListingService {
   async create(
     createDto: CreateSurveyEnumerationAreaHouseholdListingDto,
   ): Promise<SurveyEnumerationAreaHouseholdListing> {
+    // If householdSerialNumber is not provided, auto-generate it per structure
+    if (!createDto.householdSerialNumber && createDto.structureId) {
+      // Get the maximum household serial number for this structure in this survey enumeration area
+      const existingListings = await this.householdListingRepository.findAll({
+        where: {
+          surveyEnumerationAreaId: createDto.surveyEnumerationAreaId,
+          structureId: createDto.structureId,
+        },
+        attributes: ['householdSerialNumber'],
+        order: [['householdSerialNumber', 'DESC']],
+        limit: 1,
+      });
+
+      // Determine next serial number (starts from 1 for each structure)
+      createDto.householdSerialNumber =
+        existingListings.length > 0
+          ? existingListings[0].householdSerialNumber + 1
+          : 1;
+    }
+
     try {
       return await this.householdListingRepository.create(createDto as any);
     } catch (error) {
       if (error.name === 'SequelizeUniqueConstraintError') {
         throw new ConflictException(
-          `Household with serial number ${createDto.householdSerialNumber} already exists for this survey enumeration area`,
+          `Household with serial number ${createDto.householdSerialNumber} already exists for structure ${createDto.structureId} in this survey enumeration area`,
         );
       }
       throw error;
@@ -471,20 +491,6 @@ export class SurveyEnumerationAreaHouseholdListingService {
       );
     }
 
-    // Get existing listings to determine next serial number
-    const existingListings = await this.householdListingRepository.findAll({
-      where: { surveyEnumerationAreaId },
-      attributes: ['householdSerialNumber'],
-      order: [['householdSerialNumber', 'DESC']],
-      limit: 1,
-    });
-
-    // Determine starting serial number
-    const nextSerialNumber =
-      existingListings.length > 0
-        ? existingListings[0].householdSerialNumber + 1
-        : 1;
-
     // Default remarks
     const defaultRemarks =
       dto.remarks || 'No data available - Historical survey entry';
@@ -493,8 +499,9 @@ export class SurveyEnumerationAreaHouseholdListingService {
     const created: SurveyEnumerationAreaHouseholdListing[] = [];
     
     for (let i = 0; i < dto.count; i++) {
-      const serialNumber = nextSerialNumber + i;
-      const structureNumber = `STR-${serialNumber.toString().padStart(4, '0')}`;
+      // Each structure gets a unique structure number, but household serial numbers start at 1 per structure
+      const structureCounter = i + 1;
+      const structureNumber = `STR-${structureCounter.toString().padStart(4, '0')}`;
       
       // Create structure first
       const structure = await this.structureRepository.create({
@@ -504,12 +511,29 @@ export class SurveyEnumerationAreaHouseholdListingService {
         longitude: null,
       } as any);
 
+      // Get the maximum household serial number for this structure (should be 0 for new structure)
+      const existingListings = await this.householdListingRepository.findAll({
+        where: {
+          surveyEnumerationAreaId,
+          structureId: structure.id,
+        },
+        attributes: ['householdSerialNumber'],
+        order: [['householdSerialNumber', 'DESC']],
+        limit: 1,
+      });
+
+      // Determine next serial number for this structure (starts from 1 for each structure)
+      const householdSerialNumber =
+        existingListings.length > 0
+          ? existingListings[0].householdSerialNumber + 1
+          : 1;
+
       // Create household listing linked to structure
       const listing = await this.householdListingRepository.create({
         surveyEnumerationAreaId,
         structureId: structure.id,
-        householdIdentification: `HH-${serialNumber.toString().padStart(4, '0')}`,
-        householdSerialNumber: serialNumber,
+        householdIdentification: `HH-${structureCounter.toString().padStart(4, '0')}`,
+        householdSerialNumber: householdSerialNumber,
         nameOfHOH: 'Not Available',
         totalMale: 0,
         totalFemale: 0,

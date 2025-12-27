@@ -1,5 +1,6 @@
 import { SurveyEnumerator } from './entities/survey-enumerator.entity';
 import { User } from 'src/modules/auth/entities/user.entity';
+import { Dzongkhag } from 'src/modules/location/dzongkhag/entities/dzongkhag.entity';
 
 export const surveyEnumeratorProviders = [
   {
@@ -9,5 +10,9 @@ export const surveyEnumeratorProviders = [
   {
     provide: 'USER_REPOSITORY',
     useValue: User,
+  },
+  {
+    provide: 'DZONGKHAG_REPOSITORY',
+    useValue: Dzongkhag,
   },
 ];

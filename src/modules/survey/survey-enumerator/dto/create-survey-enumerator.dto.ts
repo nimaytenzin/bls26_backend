@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional } from 'class-validator';
 
 export class CreateSurveyEnumeratorDto {
   @IsInt()
@@ -8,4 +8,8 @@ export class CreateSurveyEnumeratorDto {
   @IsInt()
   @IsNotEmpty()
   surveyId: number;
+
+  @IsInt()
+  @IsOptional()
+  dzongkhagId?: number;
 }

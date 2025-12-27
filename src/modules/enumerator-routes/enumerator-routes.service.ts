@@ -69,15 +69,16 @@ export class EnumeratorRoutesService {
 
   /**
    * Get survey details with enumeration areas assigned to an enumerator
+   * Filters enumeration areas based on the enumerator's dzongkhag assignment
    * @param enumeratorId - User ID of the enumerator
    * @param surveyId - Survey ID
-   * @returns Survey with enumeration area details
+   * @returns Survey with enumeration area details (filtered by assigned dzongkhag)
    */
   async getSurveyDetailsWithEnumerationAreas(
     enumeratorId: number,
     surveyId: number,
   ) {
-    // Verify the enumerator is assigned to this survey
+    // Verify the enumerator is assigned to this survey and get dzongkhag assignment
     const assignment = await this.surveyEnumeratorRepository.findOne({
       where: {
         userId: enumeratorId,
@@ -98,8 +99,8 @@ export class EnumeratorRoutesService {
       throw new NotFoundException('Survey not found');
     }
 
-    // Get survey enumeration areas with enumeration area info only
-    const surveyEnumerationAreas =
+    // Step 1: Get all survey enumeration areas for this survey (basic EA info only)
+    const allSurveyEnumerationAreas =
       await this.surveyEnumerationAreaRepository.findAll({
         where: { surveyId },
         include: [
@@ -112,45 +113,96 @@ export class EnumeratorRoutesService {
         ],
       });
 
-    // Get full location hierarchy separately for each enumeration area
-    const enrichedSurveyEAs = await Promise.all(
-      surveyEnumerationAreas.map(async (surveyEA) => {
-        const ea = await EnumerationArea.findByPk(surveyEA.enumerationAreaId, {
+    // Step 2: Extract all EnumerationArea IDs
+    const enumerationAreaIds = allSurveyEnumerationAreas.map(
+      (sea) => sea.enumerationAreaId,
+    );
+
+    // Step 3: Load EnumerationAreas with full hierarchy (SAZ via junction -> AZ -> DZ)
+    // Filter SAZs by dzongkhagId at the AdministrativeZone level
+    const enumerationAreas = await EnumerationArea.findAll({
+      where: { id: enumerationAreaIds },
+      attributes: {
+        exclude: ['geom'],
+      },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',
+          through: { attributes: [] },
           attributes: {
             exclude: ['geom'],
           },
           include: [
             {
-              model: SubAdministrativeZone,
+              model: AdministrativeZone,
               attributes: {
                 exclude: ['geom'],
               },
-              include: [
-                {
-                  model: AdministrativeZone,
-                  attributes: {
-                    exclude: ['geom'],
-                  },
-                  include: [
-                    {
-                      model: Dzongkhag,
-                      attributes: {
-                        exclude: ['geom'],
-                      },
-                    },
-                  ],
-                },
-              ],
+              where: {
+                dzongkhagId: assignment.dzongkhagId,
+              },
+              required: true, // INNER JOIN to filter by dzongkhagId
             },
           ],
-        });
+        },
+      ],
+    });
 
-        return {
-          ...surveyEA.toJSON(),
-          enumerationArea: ea?.toJSON(),
-        };
-      }),
-    );
+    // Step 4: Load Dzongkhag separately
+    const dzongkhag = await Dzongkhag.findByPk(assignment.dzongkhagId, {
+      attributes: {
+        exclude: ['geom'],
+      },
+    });
+
+    // Step 5: Create a map of EnumerationArea ID -> EnumerationArea with hierarchy
+    const enumerationAreaMap = new Map();
+    enumerationAreas.forEach((ea) => {
+      // Attach Dzongkhag to each AdministrativeZone
+      ea.subAdministrativeZones?.forEach((saz) => {
+        if (saz.administrativeZone && dzongkhag) {
+          // Attach the Dzongkhag model instance so it gets serialized properly
+          (saz.administrativeZone as any).dzongkhag = dzongkhag;
+        }
+      });
+      enumerationAreaMap.set(ea.id, ea);
+    });
+
+    // Step 6: Filter SurveyEnumerationAreas and attach enriched EnumerationArea data
+    // Only include SurveyEnumerationAreas whose EA has at least one SAZ in the assigned dzongkhag
+    const filteredSurveyEAs = allSurveyEnumerationAreas
+      .filter((surveyEA) => {
+        const ea = enumerationAreaMap.get(surveyEA.enumerationAreaId);
+        return ea && ea.subAdministrativeZones && ea.subAdministrativeZones.length > 0;
+      })
+      .map((surveyEA) => {
+        // Attach the enriched EnumerationArea with hierarchy
+        const enrichedEA = enumerationAreaMap.get(surveyEA.enumerationAreaId);
+        (surveyEA as any).enumerationArea = enrichedEA;
+        return surveyEA;
+      });
+
+    // Step 7: Convert to JSON format, ensuring Dzongkhag is included
+    const enrichedSurveyEAs = filteredSurveyEAs.map((surveyEA) => {
+      const surveyEAJson = surveyEA.toJSON();
+      const eaJson = surveyEA.enumerationArea?.toJSON();
+      
+      // Ensure Dzongkhag is included in each AdministrativeZone
+      if (eaJson?.subAdministrativeZones) {
+        eaJson.subAdministrativeZones = eaJson.subAdministrativeZones.map((saz: any) => {
+          if (saz.administrativeZone && dzongkhag) {
+            saz.administrativeZone.dzongkhag = dzongkhag.toJSON();
+          }
+          return saz;
+        });
+      }
+      
+      return {
+        ...surveyEAJson,
+        enumerationArea: eaJson,
+      };
+    });
 
     // Combine the results
     return {
