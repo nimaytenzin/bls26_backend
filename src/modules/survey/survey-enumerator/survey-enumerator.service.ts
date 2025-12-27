@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { CreateSurveyEnumeratorDto } from './dto/create-survey-enumerator.dto';
 import { UpdateSurveyEnumeratorDto } from './dto/update-survey-enumerator.dto';
@@ -13,6 +14,8 @@ import { Survey } from '../survey/entities/survey.entity';
 import { Dzongkhag } from 'src/modules/location/dzongkhag/entities/dzongkhag.entity';
 import * as bcrypt from 'bcrypt';
 import { EnumeratorCsvRowDto } from './dto/bulk-assign-csv.dto';
+import { SupervisorHelperService } from '../../auth/services/supervisor-helper.service';
+import { Op } from 'sequelize';
 
 @Injectable()
 export class SurveyEnumeratorService {
@@ -23,6 +26,7 @@ export class SurveyEnumeratorService {
     private readonly userRepository: typeof User,
     @Inject('DZONGKHAG_REPOSITORY')
     private readonly dzongkhagRepository: typeof Dzongkhag,
+    private readonly supervisorHelperService: SupervisorHelperService,
   ) {}
 
   async create(
@@ -303,5 +307,238 @@ export class SurveyEnumeratorService {
     ];
 
     return `${headers.join(',')}\n${exampleRow.join(',')}`;
+  }
+
+  /**
+   * Get enumerators by survey for supervisor (scoped to supervisor's dzongkhags)
+   * @param supervisorId
+   * @param surveyId
+   */
+  async findBySurveyForSupervisor(
+    supervisorId: number,
+    surveyId: number,
+  ): Promise<SurveyEnumerator[]> {
+    const dzongkhagIds = await this.supervisorHelperService.getSupervisorDzongkhagIds(
+      supervisorId,
+    );
+    if (dzongkhagIds.length === 0) {
+      return [];
+    }
+
+    return this.surveyEnumeratorRepository.findAll({
+      where: {
+        surveyId,
+        dzongkhagId: { [Op.in]: dzongkhagIds },
+      },
+      include: [
+        {
+          model: User,
+          attributes: ['id', 'name', 'emailAddress', 'cid', 'phoneNumber', 'role'],
+        },
+        {
+          model: Survey,
+          attributes: [
+            'id',
+            'name',
+            'description',
+            'startDate',
+            'endDate',
+            'year',
+            'status',
+            'isFullyValidated',
+          ],
+        },
+        {
+          model: Dzongkhag,
+          attributes: ['id', 'name', 'areaCode'],
+        },
+      ],
+    });
+  }
+
+  /**
+   * Bulk upload enumerators from CSV for supervisor (with dzongkhag verification)
+   * @param supervisorId
+   * @param surveyId
+   * @param enumerators
+   */
+  async bulkAssignFromCsvForSupervisor(
+    supervisorId: number,
+    surveyId: number,
+    enumerators: EnumeratorCsvRowDto[],
+  ) {
+    const supervisorDzongkhagIds =
+      await this.supervisorHelperService.getSupervisorDzongkhagIds(supervisorId);
+
+    // Verify each enumerator's dzongkhag is in supervisor's dzongkhags
+    for (const enumerator of enumerators) {
+      const normalizeCode = (code: string | number): string => {
+        const strValue = String(code || '').trim();
+        if (!strValue) return '';
+        if (/^\d+$/.test(strValue)) {
+          return strValue.padStart(2, '0');
+        }
+        return strValue;
+      };
+
+      const dzongkhagCode = normalizeCode(enumerator.dzongkhagCode);
+      if (dzongkhagCode) {
+        const dzongkhag = await this.dzongkhagRepository.findOne({
+          where: { areaCode: dzongkhagCode },
+        });
+        if (!dzongkhag || !supervisorDzongkhagIds.includes(dzongkhag.id)) {
+          throw new ForbiddenException(
+            `You do not have access to dzongkhag ${dzongkhagCode}`,
+          );
+        }
+      }
+    }
+
+    // Proceed with bulk assignment using existing logic
+    return this.bulkAssignFromCsv(surveyId, enumerators);
+  }
+
+  /**
+   * Edit enumerator details for supervisor (verify enumerator belongs to supervisor's dzongkhag)
+   * @param supervisorId
+   * @param userId
+   * @param updateDto - Can contain user fields (name, emailAddress, phoneNumber) or assignment fields (surveyId, dzongkhagId)
+   */
+  async updateEnumeratorForSupervisor(
+    supervisorId: number,
+    userId: number,
+    updateDto: any, // Accept any to allow user fields
+  ) {
+    // Verify enumerator belongs to supervisor
+    const belongsToSupervisor =
+      await this.supervisorHelperService.verifyEnumeratorBelongsToSupervisor(
+        supervisorId,
+        userId,
+      );
+
+    if (!belongsToSupervisor) {
+      throw new ForbiddenException(
+        'You do not have access to this enumerator',
+      );
+    }
+
+    // Get user to update
+    const user = await this.userRepository.findByPk(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Update user fields if provided
+    if (updateDto.name !== undefined) {
+      user.name = updateDto.name;
+    }
+    if (updateDto.emailAddress !== undefined) {
+      user.emailAddress = updateDto.emailAddress;
+    }
+    if (updateDto.phoneNumber !== undefined) {
+      user.phoneNumber = updateDto.phoneNumber;
+    }
+
+    await user.save();
+
+    // Update survey enumerator assignments if provided
+    if (updateDto.surveyId !== undefined && updateDto.dzongkhagId !== undefined) {
+      const assignment = await this.surveyEnumeratorRepository.findOne({
+        where: { userId, surveyId: updateDto.surveyId },
+      });
+
+      if (assignment) {
+        // Verify new dzongkhag is in supervisor's dzongkhags
+        const hasAccess =
+          await this.supervisorHelperService.verifySupervisorAccessToDzongkhag(
+            supervisorId,
+            updateDto.dzongkhagId,
+          );
+
+        if (!hasAccess) {
+          throw new ForbiddenException(
+            'You do not have access to this dzongkhag',
+          );
+        }
+
+        assignment.dzongkhagId = updateDto.dzongkhagId;
+        await assignment.save();
+      }
+    }
+
+    return { message: 'Enumerator updated successfully', user };
+  }
+
+  /**
+   * Reset password for enumerator (verify enumerator belongs to supervisor's dzongkhag)
+   * @param supervisorId
+   * @param userId
+   * @param newPassword
+   */
+  async resetEnumeratorPasswordForSupervisor(
+    supervisorId: number,
+    userId: number,
+    newPassword: string,
+  ) {
+    // Verify enumerator belongs to supervisor
+    const belongsToSupervisor =
+      await this.supervisorHelperService.verifyEnumeratorBelongsToSupervisor(
+        supervisorId,
+        userId,
+      );
+
+    if (!belongsToSupervisor) {
+      throw new ForbiddenException(
+        'You do not have access to this enumerator',
+      );
+    }
+
+    // Get user
+    const user = await this.userRepository.findByPk(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Hash and update password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    return {
+      message: 'Password has been reset successfully',
+      user: {
+        id: user.id,
+        name: user.name,
+        emailAddress: user.emailAddress,
+        role: user.role,
+      },
+    };
+  }
+
+  /**
+   * Delete enumerator for supervisor (with access check)
+   * @param supervisorId
+   * @param userId
+   * @param surveyId
+   */
+  async removeForSupervisor(
+    supervisorId: number,
+    userId: number,
+    surveyId: number,
+  ) {
+    // Verify enumerator belongs to supervisor
+    const belongsToSupervisor =
+      await this.supervisorHelperService.verifyEnumeratorBelongsToSupervisor(
+        supervisorId,
+        userId,
+      );
+
+    if (!belongsToSupervisor) {
+      throw new ForbiddenException(
+        'You do not have access to this enumerator',
+      );
+    }
+
+    return this.remove(userId, surveyId);
   }
 }

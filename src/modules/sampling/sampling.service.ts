@@ -22,6 +22,8 @@ import {
 } from '../location/administrative-zone/entities/administrative-zone.entity';
 import { Dzongkhag } from '../location/dzongkhag/entities/dzongkhag.entity';
 import { SamplingEnumerationHierarchyDto } from './dto/sampling-enumeration-hierarchy-response.dto';
+import { SupervisorHelperService } from '../auth/services/supervisor-helper.service';
+import { ForbiddenException } from '@nestjs/common';
 
 interface SamplingResult {
   indices: number[];
@@ -48,6 +50,7 @@ export class SamplingService {
     private readonly householdSampleRepository: typeof SurveyEnumerationAreaHouseholdSample,
     @Inject('DZONGKHAG_REPOSITORY')
     private readonly dzongkhagRepository: typeof Dzongkhag,
+    private readonly supervisorHelperService: SupervisorHelperService,
   ) {}
 
   /**
@@ -1060,6 +1063,167 @@ export class SamplingService {
       },
       hierarchy,
     };
+  }
+
+  /**
+   * Run sampling for enumeration area for supervisor (with EA access check)
+   * @param supervisorId
+   * @param surveyId
+   * @param surveyEnumerationAreaId
+   * @param dto
+   * @param userId
+   */
+  async runSamplingForEnumerationAreaForSupervisor(
+    supervisorId: number,
+    surveyId: number,
+    surveyEnumerationAreaId: number,
+    dto: RunEnumerationAreaSamplingDto,
+    userId: number,
+  ) {
+    // Verify EA access
+    const hasAccess =
+      await this.supervisorHelperService.verifySupervisorAccessToSurveyEA(
+        supervisorId,
+        surveyEnumerationAreaId,
+      );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this enumeration area',
+      );
+    }
+
+    return this.runSamplingForEnumerationArea(
+      surveyId,
+      surveyEnumerationAreaId,
+      dto,
+      userId,
+    );
+  }
+
+  /**
+   * View sampling results for supervisor's EA (with EA access check)
+   * @param supervisorId
+   * @param surveyId
+   * @param surveyEnumerationAreaId
+   */
+  async getSamplingResultsForSupervisor(
+    supervisorId: number,
+    surveyId: number,
+    surveyEnumerationAreaId: number,
+  ) {
+    // Verify EA access
+    const hasAccess =
+      await this.supervisorHelperService.verifySupervisorAccessToSurveyEA(
+        supervisorId,
+        surveyEnumerationAreaId,
+      );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this enumeration area',
+      );
+    }
+
+    return this.getSamplingResults(surveyId, surveyEnumerationAreaId);
+  }
+
+  /**
+   * Run bulk sampling for multiple EAs for supervisor (with access check for all EAs)
+   * @param supervisorId
+   * @param surveyId
+   * @param surveyEnumerationAreaIds
+   * @param dto
+   * @param userId
+   */
+  async bulkRunSamplingForSupervisor(
+    supervisorId: number,
+    surveyId: number,
+    surveyEnumerationAreaIds: number[],
+    dto: RunEnumerationAreaSamplingDto,
+    userId: number,
+  ) {
+    // Verify all EAs belong to supervisor
+    for (const seaId of surveyEnumerationAreaIds) {
+      const hasAccess =
+        await this.supervisorHelperService.verifySupervisorAccessToSurveyEA(
+          supervisorId,
+          seaId,
+        );
+
+      if (!hasAccess) {
+        throw new ForbiddenException(
+          `You do not have access to enumeration area ${seaId}`,
+        );
+      }
+    }
+
+    // Run sampling for each EA
+    const results = [];
+    const errors = [];
+
+    for (const seaId of surveyEnumerationAreaIds) {
+      try {
+        const result = await this.runSamplingForEnumerationArea(
+          surveyId,
+          seaId,
+          dto,
+          userId,
+        );
+        results.push({ surveyEnumerationAreaId: seaId, result });
+      } catch (error) {
+        errors.push({
+          surveyEnumerationAreaId: seaId,
+          error: error.message,
+        });
+      }
+    }
+
+    return {
+      success: results.length,
+      failed: errors.length,
+      results,
+      errors,
+    };
+  }
+
+  /**
+   * Re-sample EA for supervisor (with EA access check, uses overwriteExisting: true)
+   * @param supervisorId
+   * @param surveyId
+   * @param surveyEnumerationAreaId
+   * @param dto
+   * @param userId
+   */
+  async resampleEnumerationAreaForSupervisor(
+    supervisorId: number,
+    surveyId: number,
+    surveyEnumerationAreaId: number,
+    dto: RunEnumerationAreaSamplingDto,
+    userId: number,
+  ) {
+    // Verify EA access
+    const hasAccess =
+      await this.supervisorHelperService.verifySupervisorAccessToSurveyEA(
+        supervisorId,
+        surveyEnumerationAreaId,
+      );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this enumeration area',
+      );
+    }
+
+    // Set overwriteExisting to true for re-sampling
+    const resampleDto = { ...dto, overwriteExisting: true };
+
+    return this.runSamplingForEnumerationArea(
+      surveyId,
+      surveyEnumerationAreaId,
+      resampleDto,
+      userId,
+    );
   }
 }
 

@@ -27,6 +27,11 @@ import {
   PaginatedResponse,
 } from '../../../common/utils/pagination.util';
 import * as archiver from 'archiver';
+import { SupervisorHelperService } from '../../auth/services/supervisor-helper.service';
+import { ForbiddenException } from '@nestjs/common';
+import { SurveyEnumerationAreaHouseholdSample } from '../../sampling/entities/survey-enumeration-area-household-sample.entity';
+import { SurveyEnumerationAreaSampling } from '../../sampling/entities/survey-enumeration-area-sampling.entity';
+import { Op } from 'sequelize';
 
 @Injectable()
 export class SurveyEnumerationAreaHouseholdListingService {
@@ -41,6 +46,15 @@ export class SurveyEnumerationAreaHouseholdListingService {
     private readonly enumerationAreaRepository: typeof EnumerationArea,
     @Inject('SURVEY_ENUMERATION_AREA_STRUCTURE_REPOSITORY')
     private readonly structureRepository: typeof SurveyEnumerationAreaStructure,
+    @Inject('SURVEY_EA_SAMPLING_REPOSITORY')
+    private readonly surveyEnumerationAreaSamplingRepository: typeof SurveyEnumerationAreaSampling,
+    @Inject('SURVEY_EA_HOUSEHOLD_SAMPLE_REPOSITORY')
+    private readonly householdSampleRepository: typeof SurveyEnumerationAreaHouseholdSample,
+    @Inject('ADMINISTRATIVE_ZONE_REPOSITORY')
+    private readonly administrativeZoneRepository: typeof AdministrativeZone,
+    @Inject('SUB_ADMINISTRATIVE_ZONE_REPOSITORY')
+    private readonly subAdministrativeZoneRepository: typeof SubAdministrativeZone,
+    private readonly supervisorHelperService: SupervisorHelperService,
   ) {}
 
   /**
@@ -250,6 +264,134 @@ export class SurveyEnumerationAreaHouseholdListingService {
 
     // Return paginated response
     return PaginationUtil.createPaginatedResponse(rows, count, options);
+  }
+
+  /**
+   * Get statistics for an entire survey for supervisor (with access check)
+   * Only includes households from enumeration areas the supervisor has access to
+   * @param supervisorId
+   * @param surveyId
+   * @returns Household listing statistics for the survey
+   */
+  async getStatisticsBySurveyForSupervisor(
+    supervisorId: number,
+    surveyId: number,
+  ): Promise<HouseholdListingStatisticsResponseDto> {
+    // Get supervisor's dzongkhag IDs
+    const dzongkhagIds =
+      await this.supervisorHelperService.getSupervisorDzongkhagIds(supervisorId);
+
+    if (dzongkhagIds.length === 0) {
+      throw new ForbiddenException(
+        'You do not have access to any dzongkhags',
+      );
+    }
+
+    // Get all enumeration areas in the survey
+    const surveyEAs = await this.surveyEnumerationAreaRepository.findAll({
+      where: { surveyId },
+      attributes: ['id', 'enumerationAreaId'],
+    });
+
+    if (surveyEAs.length === 0) {
+      return {
+        totalHouseholds: 0,
+        totalMale: 0,
+        totalFemale: 0,
+        totalPopulation: 0,
+        householdsWithPhone: 0,
+        averageHouseholdSize: '0.00',
+        totalEnumerationAreas: 0,
+      };
+    }
+
+    // Get enumeration area IDs and check which ones belong to supervisor's dzongkhags
+    const enumerationAreaIds = surveyEAs.map((sea) => sea.enumerationAreaId);
+    const enumerationAreas = await this.enumerationAreaRepository.findAll({
+      where: { id: enumerationAreaIds },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',
+          through: { attributes: [] },
+          include: [
+            {
+              model: AdministrativeZone,
+              attributes: ['id', 'dzongkhagId'],
+            },
+          ],
+        },
+      ],
+    });
+
+    // Filter to only EAs that belong to supervisor's dzongkhags
+    const accessibleEAIds = new Set<number>();
+    enumerationAreas.forEach((ea) => {
+      const hasAccess = ea.subAdministrativeZones?.some((saz) => {
+        const az = saz.administrativeZone;
+        return az && dzongkhagIds.includes(az.dzongkhagId);
+      });
+      if (hasAccess) {
+        accessibleEAIds.add(ea.id);
+      }
+    });
+
+    // Get survey EA IDs that the supervisor has access to
+    const accessibleSurveyEAIds = surveyEAs
+      .filter((sea) => accessibleEAIds.has(sea.enumerationAreaId))
+      .map((sea) => sea.id);
+
+    if (accessibleSurveyEAIds.length === 0) {
+      return {
+        totalHouseholds: 0,
+        totalMale: 0,
+        totalFemale: 0,
+        totalPopulation: 0,
+        householdsWithPhone: 0,
+        averageHouseholdSize: '0.00',
+        totalEnumerationAreas: 0,
+      };
+    }
+
+    // Get household listings for accessible survey EAs
+    const listings = await this.householdListingRepository.findAll({
+      where: {
+        surveyEnumerationAreaId: { [Op.in]: accessibleSurveyEAIds },
+      },
+      include: [
+        {
+          model: SurveyEnumerationArea,
+          attributes: ['id', 'enumerationAreaId'],
+        },
+      ],
+    });
+
+    const totalHouseholds = listings.length;
+    const totalMale = listings.reduce((sum, h) => sum + h.totalMale, 0);
+    const totalFemale = listings.reduce((sum, h) => sum + h.totalFemale, 0);
+    const totalPopulation = totalMale + totalFemale;
+
+    const householdsWithPhone = listings.filter(
+      (h) => h.phoneNumber && h.phoneNumber.trim() !== '',
+    ).length;
+
+    // Count unique enumeration areas
+    const uniqueEAs = new Set(
+      listings.map((l) => l.surveyEnumerationArea?.enumerationAreaId).filter(Boolean),
+    );
+
+    return {
+      totalHouseholds,
+      totalMale,
+      totalFemale,
+      totalPopulation,
+      householdsWithPhone,
+      averageHouseholdSize:
+        totalHouseholds > 0
+          ? (totalPopulation / totalHouseholds).toFixed(2)
+          : '0.00',
+      totalEnumerationAreas: uniqueEAs.size,
+    };
   }
 
   /**
@@ -1528,5 +1670,668 @@ export class SurveyEnumerationAreaHouseholdListingService {
 
       archive.finalize();
     });
+  }
+
+  /**
+   * Get household listings by survey enumeration area for supervisor (with access check)
+   * @param supervisorId
+   * @param surveyEnumerationAreaId
+   */
+  async findBySurveyEnumerationAreaForSupervisor(
+    supervisorId: number,
+    surveyEnumerationAreaId: number,
+  ): Promise<SurveyEnumerationAreaHouseholdListing[]> {
+    // Verify access
+    const hasAccess =
+      await this.supervisorHelperService.verifySupervisorAccessToSurveyEA(
+        supervisorId,
+        surveyEnumerationAreaId,
+      );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this enumeration area',
+      );
+    }
+
+    return this.findBySurveyEnumerationArea(surveyEnumerationAreaId);
+  }
+
+  /**
+   * Get paginated household listings by survey enumeration area for supervisor (with access check)
+   * @param supervisorId
+   * @param surveyEnumerationAreaId
+   * @param query
+   */
+  async findBySurveyEnumerationAreaPaginatedForSupervisor(
+    supervisorId: number,
+    surveyEnumerationAreaId: number,
+    query: PaginationQueryDto = {},
+  ): Promise<PaginatedResponse<SurveyEnumerationAreaHouseholdListing>> {
+    // Verify access
+    const hasAccess =
+      await this.supervisorHelperService.verifySupervisorAccessToSurveyEA(
+        supervisorId,
+        surveyEnumerationAreaId,
+      );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this enumeration area',
+      );
+    }
+
+    return this.findBySurveyEnumerationAreaPaginated(
+      surveyEnumerationAreaId,
+      query,
+    );
+  }
+
+  /**
+   * Get sampled households by survey enumeration area for supervisor (with access check)
+   * @param supervisorId
+   * @param surveyEnumerationAreaId
+   */
+  async findSampledHouseholdsBySurveyEAForSupervisor(
+    supervisorId: number,
+    surveyEnumerationAreaId: number,
+  ): Promise<SurveyEnumerationAreaHouseholdListing[]> {
+    // Verify access
+    const hasAccess =
+      await this.supervisorHelperService.verifySupervisorAccessToSurveyEA(
+        supervisorId,
+        surveyEnumerationAreaId,
+      );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this enumeration area',
+      );
+    }
+
+    // Get sampling record for this EA
+    const sampling = await this.surveyEnumerationAreaSamplingRepository.findOne({
+      where: { surveyEnumerationAreaId },
+    });
+
+    if (!sampling) {
+      return [];
+    }
+
+    // Get household samples
+    const samples = await this.householdSampleRepository.findAll({
+      where: { surveyEnumerationAreaSamplingId: sampling.id },
+      include: [
+        {
+          model: SurveyEnumerationAreaHouseholdListing,
+          include: [
+            {
+              model: User,
+              as: 'submitter',
+            },
+            {
+              model: SurveyEnumerationAreaStructure,
+              attributes: ['id', 'structureNumber', 'latitude', 'longitude'],
+            },
+          ],
+        },
+      ],
+      order: [['selectionOrder', 'ASC']],
+    });
+
+    return samples.map((sample) => sample.householdListing);
+  }
+
+  /**
+   * Create blank household listings for supervisor (with access check)
+   * @param supervisorId
+   * @param surveyEnumerationAreaId
+   * @param dto
+   */
+  async createBlankHouseholdListingsForSupervisor(
+    supervisorId: number,
+    surveyEnumerationAreaId: number,
+    dto: CreateBlankHouseholdListingsDto,
+  ) {
+    // Verify access
+    const hasAccess =
+      await this.supervisorHelperService.verifySupervisorAccessToSurveyEA(
+        supervisorId,
+        surveyEnumerationAreaId,
+      );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this enumeration area',
+      );
+    }
+
+    return this.createBlankHouseholdListings(
+      surveyEnumerationAreaId,
+      dto,
+      supervisorId,
+    );
+  }
+
+  /**
+   * Bulk upload households from CSV for supervisor (with EA access verification)
+   * @param supervisorId
+   * @param surveyEnumerationAreaId
+   * @param csvContent
+   */
+  async bulkUploadFromCsvForSupervisor(
+    supervisorId: number,
+    surveyEnumerationAreaId: number,
+    csvContent: string,
+  ) {
+    // Verify SurveyEA belongs to supervisor
+    const hasAccess =
+      await this.supervisorHelperService.verifySupervisorAccessToSurveyEA(
+        supervisorId,
+        surveyEnumerationAreaId,
+      );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this enumeration area',
+      );
+    }
+
+    // Parse CSV content
+    const households = this.parseHouseholdCsv(csvContent, surveyEnumerationAreaId);
+
+    // Create household listings
+    const createDtos = households.map((h) => ({
+      ...h,
+      surveyEnumerationAreaId,
+    }));
+
+    return this.bulkCreate(createDtos);
+  }
+
+  /**
+   * Parse household CSV content
+   * @param csvContent
+   * @param surveyEnumerationAreaId
+   */
+  private parseHouseholdCsv(
+    csvContent: string,
+    surveyEnumerationAreaId: number,
+  ): CreateSurveyEnumerationAreaHouseholdListingDto[] {
+    const lines = csvContent.split('\n').filter((line) => line.trim());
+    if (lines.length < 2) {
+      throw new BadRequestException(
+        'CSV file must contain at least a header and one data row',
+      );
+    }
+
+    // Parse header
+    const headerLine = lines[0].trim();
+    const headers = headerLine.split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+
+    // Find column indices
+    const findColumnIndex = (
+      exactMatches: string[],
+      partialChecks: ((h: string) => boolean)[],
+    ): number => {
+      for (const exact of exactMatches) {
+        const index = headers.findIndex(
+          (h) => h.toLowerCase() === exact.toLowerCase(),
+        );
+        if (index !== -1) return index;
+      }
+      for (const check of partialChecks) {
+        const index = headers.findIndex((h) => check(h.toLowerCase()));
+        if (index !== -1) return index;
+      }
+      return -1;
+    };
+
+    const structureIdIndex = findColumnIndex(
+      ['Structure ID', 'structureId', 'StructureId'],
+      [(h) => h.includes('structure')],
+    );
+    const householdIdentificationIndex = findColumnIndex(
+      ['Household Identification', 'householdIdentification', 'HouseholdIdentification'],
+      [(h) => h.includes('household') && h.includes('identification')],
+    );
+    const householdSerialNumberIndex = findColumnIndex(
+      ['Household Serial Number', 'householdSerialNumber', 'HouseholdSerialNumber'],
+      [(h) => h.includes('household') && h.includes('serial')],
+    );
+    const nameOfHOHIndex = findColumnIndex(
+      ['Name of HOH', 'nameOfHOH', 'NameOfHOH', 'Head of Household'],
+      [(h) => h.includes('hoh') || (h.includes('head') && h.includes('household'))],
+    );
+    const totalMaleIndex = findColumnIndex(
+      ['Total Male', 'totalMale', 'TotalMale'],
+      [(h) => h.includes('male')],
+    );
+    const totalFemaleIndex = findColumnIndex(
+      ['Total Female', 'totalFemale', 'TotalFemale'],
+      [(h) => h.includes('female')],
+    );
+    const phoneNumberIndex = findColumnIndex(
+      ['Phone Number', 'phoneNumber', 'PhoneNumber'],
+      [(h) => h.includes('phone')],
+    );
+    const remarksIndex = findColumnIndex(
+      ['Remarks', 'remarks'],
+      [(h) => h.includes('remark')],
+    );
+
+    // Parse data rows
+    const households: CreateSurveyEnumerationAreaHouseholdListingDto[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      const values = line.split(',').map((v) => v.trim().replace(/^"|"$/g, ''));
+
+      const household: CreateSurveyEnumerationAreaHouseholdListingDto = {
+        surveyEnumerationAreaId,
+        structureId:
+          structureIdIndex >= 0 && values[structureIdIndex]
+            ? parseInt(values[structureIdIndex], 10)
+            : undefined,
+        householdIdentification:
+          householdIdentificationIndex >= 0 && values[householdIdentificationIndex]
+            ? values[householdIdentificationIndex]
+            : `HH-${i}`,
+        householdSerialNumber:
+          householdSerialNumberIndex >= 0 && values[householdSerialNumberIndex]
+            ? parseInt(values[householdSerialNumberIndex], 10)
+            : undefined,
+        nameOfHOH:
+          nameOfHOHIndex >= 0 && values[nameOfHOHIndex]
+            ? values[nameOfHOHIndex]
+            : '',
+        totalMale:
+          totalMaleIndex >= 0 && values[totalMaleIndex]
+            ? parseInt(values[totalMaleIndex], 10) || 0
+            : 0,
+        totalFemale:
+          totalFemaleIndex >= 0 && values[totalFemaleIndex]
+            ? parseInt(values[totalFemaleIndex], 10) || 0
+            : 0,
+        phoneNumber:
+          phoneNumberIndex >= 0 && values[phoneNumberIndex]
+            ? values[phoneNumberIndex]
+            : undefined,
+        remarks:
+          remarksIndex >= 0 && values[remarksIndex]
+            ? values[remarksIndex]
+            : undefined,
+      };
+
+      households.push(household);
+    }
+
+    return households;
+  }
+
+  /**
+   * Update household listing for supervisor (with access check)
+   * @param supervisorId
+   * @param id
+   * @param updateDto
+   */
+  async updateForSupervisor(
+    supervisorId: number,
+    id: number,
+    updateDto: UpdateSurveyEnumerationAreaHouseholdListingDto,
+  ): Promise<SurveyEnumerationAreaHouseholdListing> {
+    // Get household listing to check access
+    const listing = await this.findOne(id);
+    if (!listing) {
+      throw new BadRequestException('Household listing not found');
+    }
+
+    // Verify access to the SurveyEA
+    const hasAccess =
+      await this.supervisorHelperService.verifySupervisorAccessToSurveyEA(
+        supervisorId,
+        listing.surveyEnumerationAreaId,
+      );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this enumeration area',
+      );
+    }
+
+    return this.update(id, updateDto);
+  }
+
+  /**
+   * Export household listings by EA for supervisor (with access check)
+   * @param supervisorId
+   * @param surveyEnumerationAreaId
+   */
+  async exportHouseholdListingsByEAForSupervisor(
+    supervisorId: number,
+    surveyEnumerationAreaId: number,
+  ): Promise<Buffer> {
+    // Verify access
+    const hasAccess =
+      await this.supervisorHelperService.verifySupervisorAccessToSurveyEA(
+        supervisorId,
+        surveyEnumerationAreaId,
+      );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this enumeration area',
+      );
+    }
+
+    return this.generateEnumerationAreaExportZIP(surveyEnumerationAreaId);
+  }
+
+  /**
+   * Generate CSV export for household listings in a survey enumeration area for supervisor (with access check)
+   * @param supervisorId - Supervisor ID
+   * @param surveyEnumerationAreaId - Survey Enumeration Area ID
+   * @returns CSV content as string
+   */
+  async generateEnumerationAreaCSVExportForSupervisor(
+    supervisorId: number,
+    surveyEnumerationAreaId: number,
+  ): Promise<string> {
+    // Verify access
+    const hasAccess =
+      await this.supervisorHelperService.verifySupervisorAccessToSurveyEA(
+        supervisorId,
+        surveyEnumerationAreaId,
+      );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this enumeration area',
+      );
+    }
+
+    return this.generateEnumerationAreaCSVExport(surveyEnumerationAreaId);
+  }
+
+  /**
+   * Export household count by EA for supervisor (with access check)
+   * @param supervisorId
+   * @param surveyEnumerationAreaId
+   */
+  async exportHouseholdCountByEAForSupervisor(
+    supervisorId: number,
+    surveyEnumerationAreaId: number,
+  ) {
+    // Verify access
+    const hasAccess =
+      await this.supervisorHelperService.verifySupervisorAccessToSurveyEA(
+        supervisorId,
+        surveyEnumerationAreaId,
+      );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this enumeration area',
+      );
+    }
+
+    const statistics = await this.getStatistics(surveyEnumerationAreaId);
+    return {
+      surveyEnumerationAreaId,
+      totalHouseholds: statistics.totalHouseholds,
+      totalMale: statistics.totalMale,
+      totalFemale: statistics.totalFemale,
+      totalPopulation: statistics.totalPopulation,
+      averageHouseholdSize: statistics.averageHouseholdSize,
+    };
+  }
+
+  /**
+   * Export household count aggregated by gewog/thromde, chiwog/lap, EA for supervisor's dzongkhag
+   * Returns CSV content with household counts by EA
+   * @param supervisorId
+   * @param dzongkhagId
+   */
+  async exportHouseholdCountByDzongkhagForSupervisor(
+    supervisorId: number,
+    dzongkhagId: number,
+  ): Promise<string> {
+    // Verify access to dzongkhag
+    const hasAccess =
+      await this.supervisorHelperService.verifySupervisorAccessToDzongkhag(
+        supervisorId,
+        dzongkhagId,
+      );
+
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this dzongkhag',
+      );
+    }
+
+    // Get all EAs in this dzongkhag via EA -> SAZ -> AZ -> Dzongkhag
+    const dzongkhagIds = await this.supervisorHelperService.getSupervisorDzongkhagIds(
+      supervisorId,
+    );
+    if (!dzongkhagIds.includes(dzongkhagId)) {
+      throw new ForbiddenException(
+        'You do not have access to this dzongkhag',
+      );
+    }
+
+    // Fetch Dzongkhag to get name and code
+    const dzongkhag = await Dzongkhag.findByPk(dzongkhagId, {
+      attributes: ['id', 'name', 'areaCode'],
+    });
+
+    if (!dzongkhag) {
+      throw new BadRequestException(`Dzongkhag with ID ${dzongkhagId} not found`);
+    }
+
+    // CSV Headers (capitalized)
+    const headers = [
+      'Dzongkhag',
+      'Dzongkhag Code',
+      'Gewog/Thromde',
+      'Gewog/Thromde Code',
+      'Chiwog/LAP',
+      'ChiwogLAP Code',
+      'EA',
+      'EA Code',
+      'Households',
+    ];
+
+    // Prepare CSV rows
+    const csvRows: string[] = [];
+
+    // Get administrative zones for this dzongkhag
+    const administrativeZones = await this.administrativeZoneRepository.findAll({
+      where: { dzongkhagId },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          include: [
+            {
+              model: EnumerationArea,
+              as: 'enumerationAreas',
+              through: { attributes: [] },
+              attributes: ['id', 'name', 'areaCode'],
+            },
+          ],
+        },
+      ],
+    });
+
+    // Iterate through hierarchy to build CSV rows
+    for (const az of administrativeZones) {
+      for (const saz of az.subAdministrativeZones || []) {
+        for (const ea of saz.enumerationAreas || []) {
+          // Get survey enumeration areas for this EA
+          const surveyEAs = await this.surveyEnumerationAreaRepository.findAll({
+            where: { enumerationAreaId: ea.id },
+            include: [
+              {
+                model: SurveyEnumerationAreaHouseholdListing,
+                attributes: ['id'],
+              },
+            ],
+          });
+
+          // Count total households across all surveys for this EA
+          let totalHouseholds = 0;
+          for (const surveyEA of surveyEAs) {
+            const listings = surveyEA.householdListings || [];
+            totalHouseholds += listings.length;
+          }
+
+          // Build CSV row
+          const row = [
+            dzongkhag.name || '',
+            dzongkhag.areaCode || '',
+            az.name || '',
+            az.areaCode || '',
+            saz.name || '',
+            saz.areaCode || '',
+            ea.name || '',
+            ea.areaCode || '',
+            totalHouseholds.toString(),
+          ]
+            .map((field) => `"${String(field).replace(/"/g, '""')}"`)
+            .join(',');
+
+          csvRows.push(row);
+        }
+      }
+    }
+
+    // Combine headers and rows
+    const csvContent = [
+      headers.map((h) => `"${h}"`).join(','),
+      ...csvRows,
+    ].join('\n');
+
+    return csvContent;
+  }
+
+  /**
+   * Get paginated household listings for a survey for supervisor (with access check)
+   * Only returns households from enumeration areas the supervisor has access to
+   * @param supervisorId - Supervisor ID
+   * @param surveyId - Survey ID
+   * @param query - Pagination query parameters
+   * @returns Paginated response with household listings
+   */
+  async findBySurveyPaginatedForSupervisor(
+    supervisorId: number,
+    surveyId: number,
+    query: PaginationQueryDto = {},
+  ): Promise<PaginatedResponse<SurveyEnumerationAreaHouseholdListing>> {
+    // Get supervisor's dzongkhag IDs
+    const dzongkhagIds =
+      await this.supervisorHelperService.getSupervisorDzongkhagIds(supervisorId);
+
+    if (dzongkhagIds.length === 0) {
+      throw new ForbiddenException(
+        'You do not have access to any dzongkhags',
+      );
+    }
+
+    // Get all enumeration areas in the survey
+    const surveyEAs = await this.surveyEnumerationAreaRepository.findAll({
+      where: { surveyId },
+      attributes: ['id', 'enumerationAreaId'],
+    });
+
+    if (surveyEAs.length === 0) {
+      // Return empty paginated response
+      const options = PaginationUtil.normalizePaginationOptions(query);
+      return PaginationUtil.createPaginatedResponse([], 0, options);
+    }
+
+    // Get enumeration area IDs and check which ones belong to supervisor's dzongkhags
+    const enumerationAreaIds = surveyEAs.map((sea) => sea.enumerationAreaId);
+    const enumerationAreas = await this.enumerationAreaRepository.findAll({
+      where: { id: enumerationAreaIds },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',
+          through: { attributes: [] },
+          include: [
+            {
+              model: AdministrativeZone,
+              attributes: ['id', 'dzongkhagId'],
+            },
+          ],
+        },
+      ],
+    });
+
+    // Filter to only EAs that belong to supervisor's dzongkhags
+    const accessibleEAIds = new Set<number>();
+    enumerationAreas.forEach((ea) => {
+      const hasAccess = ea.subAdministrativeZones?.some((saz) => {
+        const az = saz.administrativeZone;
+        return az && dzongkhagIds.includes(az.dzongkhagId);
+      });
+      if (hasAccess) {
+        accessibleEAIds.add(ea.id);
+      }
+    });
+
+    if (accessibleEAIds.size === 0) {
+      // Return empty paginated response
+      const options = PaginationUtil.normalizePaginationOptions(query);
+      return PaginationUtil.createPaginatedResponse([], 0, options);
+    }
+
+    // Get survey EA IDs that the supervisor has access to
+    const accessibleSurveyEAIds = surveyEAs
+      .filter((sea) => accessibleEAIds.has(sea.enumerationAreaId))
+      .map((sea) => sea.id);
+
+    // Normalize pagination options
+    const options = PaginationUtil.normalizePaginationOptions(query);
+
+    // Calculate offset and limit
+    const { offset, limit } = PaginationUtil.calculateOffsetLimit(options);
+
+    // Build order clause - default to createdAt DESC (latest to oldest)
+    const order = options.sortBy
+      ? PaginationUtil.buildOrderClause(options, 'createdAt')
+      : [['createdAt', 'DESC']];
+
+    // Fetch data with count, filtered to accessible survey EAs
+    const { rows, count } = await this.householdListingRepository.findAndCountAll(
+      {
+        where: {
+          surveyEnumerationAreaId: { [Op.in]: accessibleSurveyEAIds },
+        },
+        include: [
+          {
+            model: SurveyEnumerationArea,
+            attributes: ['id', 'surveyId', 'enumerationAreaId'],
+            where: { surveyId },
+            required: true,
+          },
+          {
+            model: User,
+            as: 'submitter',
+            attributes: ['id', 'name', 'phoneNumber', 'cid'],
+          },
+          {
+            model:SurveyEnumerationAreaStructure
+          }
+        ],
+        order,
+        offset,
+        limit,
+        distinct: true, // Count distinct household listings, not rows from JOIN
+      },
+    );
+
+    // Return paginated response
+    return PaginationUtil.createPaginatedResponse(rows, count, options);
   }
 }

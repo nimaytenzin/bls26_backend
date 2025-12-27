@@ -31,6 +31,8 @@ export class EnumeratorRoutesService {
     private readonly surveyEnumerationAreaRepository: typeof SurveyEnumerationArea,
     @Inject('SURVEY_ENUMERATION_AREA_HOUSEHOLD_LISTING_REPOSITORY')
     private readonly householdListingRepository: typeof SurveyEnumerationAreaHouseholdListing,
+    @Inject('SURVEY_EA_HOUSEHOLD_SAMPLE_REPOSITORY')
+    private readonly householdSampleRepository: typeof SurveyEnumerationAreaHouseholdSample,
   ) {}
 
   /**
@@ -333,10 +335,10 @@ export class EnumeratorRoutesService {
       );
     }
 
-    // Check if the survey EA is already enumerated
-    if (surveyEA.isEnumerated) {
+    // Prevent adding household listings to published enumeration areas
+    if (surveyEA.isPublished) {
       throw new BadRequestException(
-        'Cannot add household listing to an enumerated survey enumeration area',
+        'Cannot add household listing to a published survey enumeration area',
       );
     }
 
@@ -345,6 +347,15 @@ export class EnumeratorRoutesService {
       ...createDto,
       submittedBy: userId,
     });
+
+    // If EA is sampled but not published, reset sampling status (resample required)
+    // The sampling record will be overwritten when resampling is performed
+    if (surveyEA.isSampled && !surveyEA.isPublished) {
+      await surveyEA.update({
+        isSampled: false,
+        // Keep sampledBy and sampledDate for audit trail
+      });
+    }
 
     return householdListing;
   }
@@ -432,10 +443,10 @@ export class EnumeratorRoutesService {
       throw new NotFoundException('Survey enumeration area not found');
     }
 
-    // Check if the survey EA is already enumerated
-    if (surveyEA.isEnumerated) {
+    // Prevent deleting household listings from published enumeration areas
+    if (surveyEA.isPublished) {
       throw new BadRequestException(
-        'Cannot delete household listing from an enumerated survey enumeration area',
+        'Cannot delete household listing from a published survey enumeration area',
       );
     }
 
@@ -460,8 +471,22 @@ export class EnumeratorRoutesService {
       );
     }
 
+    // Delete all related household samples first (to avoid foreign key constraint violation)
+    await this.householdSampleRepository.destroy({
+      where: { householdListingId: id },
+    });
+
     // Delete the household listing
     await householdListing.destroy();
+
+    // If EA is sampled but not published, reset sampling status (resample required)
+    // The sampling record will be overwritten when resampling is performed
+    if (surveyEA.isSampled && !surveyEA.isPublished) {
+      await surveyEA.update({
+        isSampled: false,
+        // Keep sampledBy and sampledDate for audit trail
+      });
+    }
 
     return { deleted: true, message: 'Household listing deleted successfully' };
   }

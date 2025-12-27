@@ -610,6 +610,7 @@ export class AuthService {
         {
           model: Dzongkhag,
           through: { attributes: [] },
+          attributes: ['id', 'name', 'areaCode'],
         },
       ],
     });

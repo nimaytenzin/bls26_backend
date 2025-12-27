@@ -25,6 +25,7 @@ import {
   PaginatedResponse,
 } from '../../../common/utils/pagination.util';
 import { Op } from 'sequelize';
+import { SupervisorHelperService } from '../../auth/services/supervisor-helper.service';
 
 @Injectable()
 export class SurveyService {
@@ -42,6 +43,7 @@ export class SurveyService {
     @Inject('DZONGKHAG_REPOSITORY')
     private readonly dzongkhagRepository: typeof Dzongkhag,
     private readonly householdListingService: SurveyEnumerationAreaHouseholdListingService,
+    private readonly supervisorHelperService: SupervisorHelperService,
   ) {}
 
   async create(createSurveyDto: CreateSurveyDto): Promise<Survey> {
@@ -173,6 +175,54 @@ export class SurveyService {
     return await this.surveyRepository.findOne<Survey>({
       where: { id },
       include: ['enumerationAreas'],
+    });
+  }
+
+  /**
+   * Get a single survey for supervisor (only if survey has EAs in supervisor's dzongkhags)
+   * @param surveyId - Survey ID
+   * @param supervisorId - Supervisor ID
+   */
+  async findOneForSupervisor(
+    surveyId: number,
+    supervisorId: number,
+  ): Promise<Survey> {
+    // Get supervisor's dzongkhag IDs
+    const supervisorDzongkhagIds =
+      await this.supervisorHelperService.getSupervisorDzongkhagIds(supervisorId);
+
+    if (supervisorDzongkhagIds.length === 0) {
+      throw new NotFoundException(
+        `Survey with ID ${surveyId} not found or you don't have access to it`,
+      );
+    }
+
+    // Get the survey
+    const survey = await this.surveyRepository.findByPk(surveyId);
+
+    if (!survey) {
+      throw new NotFoundException(`Survey with ID ${surveyId} not found`);
+    }
+
+    // Check if survey has any enumeration areas in supervisor's dzongkhags
+    const surveyEAs = await this.surveyEnumerationAreaRepository.findAll({
+      where: { surveyId },
+      attributes: ['enumerationAreaId'],
+    });
+
+    if (surveyEAs.length === 0) {
+      // Survey exists but has no enumeration areas, supervisor can't access it
+      throw new NotFoundException(
+        `Survey with ID ${surveyId} not found or you don't have access to it`,
+      );
+    }
+
+
+
+    // Return survey with enumeration areas (filtered to only supervisor's dzongkhags)
+    return await this.surveyRepository.findOne<Survey>({
+      where: { id: surveyId },
+   
     });
   }
 
@@ -1424,5 +1474,395 @@ export class SurveyService {
     variants.add(raw.padStart(3, '0'));
     variants.add(raw.padStart(4, '0'));
     return Array.from(variants);
+  }
+
+  /**
+   * Get enumeration hierarchy for a survey for supervisor (scoped to supervisor's dzongkhags)
+   * Returns: Dzongkhag → Administrative Zone → Sub-Administrative Zone → Enumeration Areas
+   * Only includes dzongkhags assigned to the supervisor
+   * @param surveyId - Survey ID
+   * @param supervisorId - Supervisor ID
+   */
+  async getSurveyEnumerationHierarchyForSupervisor(
+    surveyId: number,
+    supervisorId: number,
+  ): Promise<SurveyEnumerationHierarchyDto> {
+    // Get supervisor's dzongkhag IDs
+    const supervisorDzongkhagIds =
+      await this.supervisorHelperService.getSupervisorDzongkhagIds(supervisorId);
+
+    if (supervisorDzongkhagIds.length === 0) {
+      // Return empty hierarchy if supervisor has no dzongkhags assigned
+      const survey = await this.surveyRepository.findByPk(surveyId, {
+        attributes: ['id', 'name', 'year', 'status'],
+      });
+
+      if (!survey) {
+        throw new NotFoundException(`Survey with ID ${surveyId} not found`);
+      }
+
+      return {
+        survey: {
+          id: survey.id,
+          name: survey.name,
+          year: survey.year,
+          status: survey.status,
+        },
+        summary: {
+          totalDzongkhags: 0,
+          totalAdministrativeZones: 0,
+          totalSubAdministrativeZones: 0,
+          totalEnumerationAreas: 0,
+        },
+        hierarchy: [],
+      };
+    }
+
+    // Verify survey exists
+    const survey = await this.surveyRepository.findByPk(surveyId, {
+      attributes: ['id', 'name', 'year', 'status'],
+    });
+
+    if (!survey) {
+      throw new NotFoundException(`Survey with ID ${surveyId} not found`);
+    }
+
+    // Step 1: Get all survey enumeration areas with workflow status
+    const surveyEAs = await this.surveyEnumerationAreaRepository.findAll({
+      where: { surveyId: surveyId },
+      attributes: [
+        'id',
+        'enumerationAreaId',
+        'isEnumerated',
+        'enumeratedBy',
+        'enumerationDate',
+        'isSampled',
+        'sampledBy',
+        'sampledDate',
+        'isPublished',
+        'publishedBy',
+        'publishedDate',
+      ],
+    });
+
+    if (surveyEAs.length === 0) {
+      return {
+        survey: {
+          id: survey.id,
+          name: survey.name,
+          year: survey.year,
+          status: survey.status,
+        },
+        summary: {
+          totalDzongkhags: 0,
+          totalAdministrativeZones: 0,
+          totalSubAdministrativeZones: 0,
+          totalEnumerationAreas: 0,
+        },
+        hierarchy: [],
+      };
+    }
+
+    const enumerationAreaIds = surveyEAs.map((sea) => sea.enumerationAreaId);
+
+    // Step 2: Get enumeration areas with their SAZs via junction table, filtered by supervisor's dzongkhags
+    const enumerationAreas = await EnumerationArea.findAll({
+      where: { id: enumerationAreaIds },
+      attributes: {
+        exclude: ['geom'],
+      },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',
+          through: { attributes: [] },
+          attributes: { exclude: ['geom'] },
+          include: [
+            {
+              model: AdministrativeZone,
+              attributes: { exclude: ['geom'] },
+              where: { dzongkhagId: { [Op.in]: supervisorDzongkhagIds } },
+              required: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    // Filter to only include EAs that have at least one SAZ in supervisor's dzongkhags
+    const filteredEnumerationAreas = enumerationAreas.filter((ea) => {
+      if (!ea.subAdministrativeZones) return false;
+      return ea.subAdministrativeZones.some((saz) => {
+        const az = saz.administrativeZone;
+        return az && supervisorDzongkhagIds.includes(az.dzongkhagId);
+      });
+    });
+
+    if (filteredEnumerationAreas.length === 0) {
+      return {
+        survey: {
+          id: survey.id,
+          name: survey.name,
+          year: survey.year,
+          status: survey.status,
+        },
+        summary: {
+          totalDzongkhags: 0,
+          totalAdministrativeZones: 0,
+          totalSubAdministrativeZones: 0,
+          totalEnumerationAreas: 0,
+        },
+        hierarchy: [],
+      };
+    }
+
+    // Collect all unique SAZ IDs from junction table
+    const subAdminZoneIds = [
+      ...new Set(
+        filteredEnumerationAreas.flatMap((ea) =>
+          ea.subAdministrativeZones
+            ?.map((saz) => saz.id)
+            .filter((id) => id !== undefined) || [],
+        ),
+      ),
+    ];
+
+    // Step 3: Get sub-administrative zones
+    const subAdminZones = await SubAdministrativeZone.findAll({
+      where: { id: subAdminZoneIds },
+      attributes: {
+        exclude: ['geom'],
+      },
+    });
+
+    const adminZoneIds = [
+      ...new Set(subAdminZones.map((saz) => saz.administrativeZoneId)),
+    ];
+
+    // Step 4: Get administrative zones (filtered by supervisor's dzongkhags)
+    const adminZones = await AdministrativeZone.findAll({
+      where: {
+        id: adminZoneIds,
+        dzongkhagId: { [Op.in]: supervisorDzongkhagIds },
+      },
+      attributes: {
+        exclude: ['geom'],
+      },
+    });
+
+    const dzongkhagIds = [...new Set(adminZones.map((az) => az.dzongkhagId))];
+
+    // Step 5: Get dzongkhags (only supervisor's dzongkhags)
+    const dzongkhags = await this.dzongkhagRepository.findAll({
+      where: { id: dzongkhagIds },
+      attributes: {
+        exclude: ['geom'],
+      },
+    });
+
+    // Create lookup maps for efficient access
+    const dzongkhagMap = new Map(dzongkhags.map((d) => [d.id, d]));
+    const adminZoneMap = new Map(adminZones.map((az) => [az.id, az]));
+    const subAdminZoneMap = new Map(subAdminZones.map((saz) => [saz.id, saz]));
+    const enumerationAreaMap = new Map(
+      filteredEnumerationAreas.map((ea) => [ea.id, ea]),
+    );
+    const surveyEAMap = new Map(
+      surveyEAs
+        .filter((sea) =>
+          filteredEnumerationAreas.some((ea) => ea.id === sea.enumerationAreaId),
+        )
+        .map((sea) => [sea.enumerationAreaId, sea.id]),
+    );
+    const surveyEADataMap = new Map(
+      surveyEAs
+        .filter((sea) =>
+          filteredEnumerationAreas.some((ea) => ea.id === sea.enumerationAreaId),
+        )
+        .map((sea) => [
+          sea.enumerationAreaId,
+          {
+            id: sea.id,
+            isEnumerated: sea.isEnumerated,
+            enumeratedBy: sea.enumeratedBy,
+            enumerationDate: sea.enumerationDate,
+            isSampled: sea.isSampled,
+            sampledBy: sea.sampledBy,
+            sampledDate: sea.sampledDate,
+            isPublished: sea.isPublished,
+            publishedBy: sea.publishedBy,
+            publishedDate: sea.publishedDate,
+          },
+        ]),
+    );
+
+    // Get household counts for each survey enumeration area
+    const surveyEAIds = surveyEAs
+      .filter((sea) =>
+        filteredEnumerationAreas.some((ea) => ea.id === sea.enumerationAreaId),
+      )
+      .map((sea) => sea.id);
+    const householdCounts = new Map<number, number>();
+
+    if (surveyEAIds.length > 0) {
+      const households = await this.householdListingRepository.findAll({
+        where: { surveyEnumerationAreaId: surveyEAIds },
+        attributes: ['surveyEnumerationAreaId'],
+      });
+
+      // Count households per survey enumeration area
+      households.forEach((household) => {
+        const currentCount =
+          householdCounts.get(household.surveyEnumerationAreaId) || 0;
+        householdCounts.set(
+          household.surveyEnumerationAreaId,
+          currentCount + 1,
+        );
+      });
+    }
+
+    // Build hierarchical structure: Dzongkhag → AdminZone → SubAdminZone → EA
+    const hierarchyMap = new Map();
+
+    filteredEnumerationAreas.forEach((ea) => {
+      // Handle multiple SAZs per EA via junction table
+      const sazIds = ea.subAdministrativeZones?.map((saz) => saz.id) || [];
+
+      // Process each SAZ linked to this EA
+      sazIds.forEach((sazId) => {
+        const subAdminZone = subAdminZoneMap.get(sazId);
+        if (!subAdminZone) return;
+
+        const adminZone = adminZoneMap.get(subAdminZone.administrativeZoneId);
+        if (!adminZone) return;
+
+        // Only include if dzongkhag is in supervisor's dzongkhags
+        if (!supervisorDzongkhagIds.includes(adminZone.dzongkhagId)) {
+          return;
+        }
+
+        const dzongkhag = dzongkhagMap.get(adminZone.dzongkhagId);
+        if (!dzongkhag) return;
+
+        // Get or create dzongkhag entry
+        if (!hierarchyMap.has(dzongkhag.id)) {
+          hierarchyMap.set(dzongkhag.id, {
+            id: dzongkhag.id,
+            name: dzongkhag.name,
+            areaCode: dzongkhag.areaCode,
+            administrativeZones: new Map(),
+          });
+        }
+
+        const dzongkhagData = hierarchyMap.get(dzongkhag.id);
+
+        // Get or create administrative zone entry
+        if (!dzongkhagData.administrativeZones.has(adminZone.id)) {
+          dzongkhagData.administrativeZones.set(adminZone.id, {
+            id: adminZone.id,
+            name: adminZone.name,
+            areaCode: adminZone.areaCode,
+            type: adminZone.type,
+            subAdministrativeZones: new Map(),
+          });
+        }
+
+        const adminZoneData = dzongkhagData.administrativeZones.get(
+          adminZone.id,
+        );
+
+        // Get or create sub-administrative zone entry
+        if (!adminZoneData.subAdministrativeZones.has(subAdminZone.id)) {
+          adminZoneData.subAdministrativeZones.set(subAdminZone.id, {
+            id: subAdminZone.id,
+            name: subAdminZone.name,
+            areaCode: subAdminZone.areaCode,
+            type: subAdminZone.type,
+            enumerationAreas: [],
+          });
+        }
+
+        const subAdminZoneData = adminZoneData.subAdministrativeZones.get(
+          subAdminZone.id,
+        );
+
+        // Add enumeration area
+        const seaData = surveyEADataMap.get(ea.id);
+        const surveyEAId = surveyEAMap.get(ea.id);
+        const householdCount = householdCounts.get(surveyEAId) || 0;
+
+        subAdminZoneData.enumerationAreas.push({
+          id: ea.id,
+          name: ea.name,
+          areaCode: ea.areaCode,
+          surveyEnumerationAreaId: surveyEAId,
+          totalHouseholdCount: householdCount,
+          isEnumerated: seaData?.isEnumerated || false,
+          enumeratedBy: seaData?.enumeratedBy || null,
+          enumerationDate: seaData?.enumerationDate || null,
+          isSampled: seaData?.isSampled || false,
+          sampledBy: seaData?.sampledBy || null,
+          sampledDate: seaData?.sampledDate || null,
+          isPublished: seaData?.isPublished || false,
+          publishedBy: seaData?.publishedBy || null,
+          publishedDate: seaData?.publishedDate || null,
+        });
+      }); // Close sazIds.forEach
+    }); // Close filteredEnumerationAreas.forEach
+
+    // Convert maps to arrays for JSON response
+    const hierarchy = Array.from(hierarchyMap.values()).map((dzongkhag) => ({
+      id: dzongkhag.id,
+      name: dzongkhag.name,
+      areaCode: dzongkhag.areaCode,
+      administrativeZones: Array.from(
+        dzongkhag.administrativeZones.values(),
+      ).map((adminZone: any) => ({
+        id: adminZone.id,
+        name: adminZone.name,
+        areaCode: adminZone.areaCode,
+        type: adminZone.type,
+        subAdministrativeZones: Array.from(
+          adminZone.subAdministrativeZones.values(),
+        ).map((subAdminZone: any) => ({
+          id: subAdminZone.id,
+          name: subAdminZone.name,
+          areaCode: subAdminZone.areaCode,
+          type: subAdminZone.type,
+          enumerationAreas: subAdminZone.enumerationAreas,
+        })),
+      })),
+    }));
+
+    // Calculate summary statistics
+    let totalAdminZones = 0;
+    let totalSubAdminZones = 0;
+    let totalEnumerationAreas = 0;
+
+    hierarchy.forEach((dzongkhag) => {
+      totalAdminZones += dzongkhag.administrativeZones.length;
+      dzongkhag.administrativeZones.forEach((adminZone) => {
+        totalSubAdminZones += adminZone.subAdministrativeZones.length;
+        adminZone.subAdministrativeZones.forEach((subAdminZone) => {
+          totalEnumerationAreas += subAdminZone.enumerationAreas.length;
+        });
+      });
+    });
+
+    return {
+      survey: {
+        id: survey.id,
+        name: survey.name,
+        year: survey.year,
+        status: survey.status,
+      },
+      summary: {
+        totalDzongkhags: hierarchy.length,
+        totalAdministrativeZones: totalAdminZones,
+        totalSubAdministrativeZones: totalSubAdminZones,
+        totalEnumerationAreas,
+      },
+      hierarchy,
+    };
   }
 }

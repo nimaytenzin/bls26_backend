@@ -3,6 +3,7 @@ import { Survey } from '../survey/survey/entities/survey.entity';
 import { User } from '../auth/entities/user.entity';
 import { SurveyEnumerationArea } from '../survey/survey-enumeration-area/entities/survey-enumeration-area.entity';
 import { SurveyEnumerationAreaHouseholdListing } from '../survey/survey-enumeration-area-household-listing/entities/survey-enumeration-area-household-listing.entity';
+import { SurveyEnumerationAreaHouseholdSample } from '../sampling/entities/survey-enumeration-area-household-sample.entity';
 
 export const enumeratorRoutesProviders = [
   {
@@ -24,5 +25,9 @@ export const enumeratorRoutesProviders = [
   {
     provide: 'SURVEY_ENUMERATION_AREA_HOUSEHOLD_LISTING_REPOSITORY',
     useValue: SurveyEnumerationAreaHouseholdListing,
+  },
+  {
+    provide: 'SURVEY_EA_HOUSEHOLD_SAMPLE_REPOSITORY',
+    useValue: SurveyEnumerationAreaHouseholdSample,
   },
 ];

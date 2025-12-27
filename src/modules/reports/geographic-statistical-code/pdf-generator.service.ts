@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { GeographicStatisticalCodeResponse } from './geographic-statistical-code.dto';
+import * as path from 'path';
+import * as fs from 'fs';
 
 // PDFKit is a CommonJS module, use require
 const PDFDocument = require('pdfkit');
@@ -16,10 +18,10 @@ export class PdfGeneratorService {
 
       try {
         const doc = new PDFDocument({
-          size: 'A4',
+          size: 'A4', // A4 size: 210mm x 297mm (8.27" x 11.69")
           margins: {
-            top: 60,
-            bottom: 60,
+            top: 50,
+            bottom: 50,
             left: 40,
             right: 40,
           },
@@ -63,6 +65,9 @@ export class PdfGeneratorService {
 
         // Build PDF content
         try {
+          // Add cover page first
+          this.buildCoverPage(doc);
+          // Then add main content
           this.buildPDFContent(doc, reportData);
         } catch (error) {
           hasError = true;
@@ -77,6 +82,138 @@ export class PdfGeneratorService {
         reject(new Error(`Failed to generate PDF: ${error.message}`));
     }
     });
+  }
+
+  /**
+   * Build cover page - ensures content fits on single A4 page
+   */
+  private buildCoverPage(doc: PDFKit.PDFDocument): void {
+    const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+    const topMargin = 50;
+    const bottomMargin = 50;
+    const availableHeight = pageHeight - topMargin - bottomMargin;
+
+    // Get current month and year
+    const now = new Date();
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const currentMonthYear = `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+
+    // Start from top margin
+    let currentY = topMargin;
+
+    // Add NSB logo
+    try {
+      const logoPath = path.join(process.cwd(), 'fonts', 'logo.png');
+      if (fs.existsSync(logoPath)) {
+        // Center logo horizontally
+        const logoWidth = 100; // Reduced from 120 to fit better
+        const logoHeight = 100; // Reduced from 120 to fit better
+        const logoX = (pageWidth - logoWidth) / 2;
+        const logoY = currentY;
+
+        doc.image(logoPath, logoX, logoY, {
+          width: logoWidth,
+          height: logoHeight,
+          fit: [logoWidth, logoHeight],
+        });
+
+        // Move down after logo
+        currentY = logoY + logoHeight + 30; // Reduced spacing from 40 to 30
+      } else {
+        // If logo not found, start from top margin
+        currentY = topMargin + 20;
+      }
+    } catch (error) {
+      // If logo loading fails, continue without it
+      currentY = topMargin + 20;
+    }
+
+    // Set Y position for text
+    doc.y = currentY;
+
+    // Title: BHUTAN STANDARD STATISTICAL GEOGRAPHIC CODE
+    // Reduced font size slightly and spacing to ensure it fits
+    doc
+      .fontSize(22) // Reduced from 24
+      .font('Helvetica-Bold')
+      .fillColor('#2c3e50')
+      .text('BHUTAN STANDARD', {
+        align: 'center',
+      })
+      .moveDown(0.4); // Reduced from 0.5
+
+    doc
+      .fontSize(22) // Reduced from 24
+      .font('Helvetica-Bold')
+      .fillColor('#2c3e50')
+      .text('STATISTICAL GEOGRAPHIC', {
+        align: 'center',
+      })
+      .moveDown(0.4); // Reduced from 0.5
+
+    doc
+      .fontSize(22) // Reduced from 24
+      .font('Helvetica-Bold')
+      .fillColor('#2c3e50')
+      .text('CODE', {
+        align: 'center',
+      })
+      .moveDown(1.5); // Reduced from 2
+
+    // Current month and year
+    doc
+      .fontSize(13) // Reduced from 14
+      .font('Helvetica')
+      .fillColor('#34495e')
+      .text(currentMonthYear, {
+        align: 'center',
+      })
+      .moveDown(2); // Reduced from 3
+
+    // Footer: National Statistics Bureau, Royal Government of Bhutan, www.nsb.gov.bt
+    // Position footer at bottom margin
+    const footerY = pageHeight - bottomMargin - 50; // Reserve 50px for footer content
+    doc.y = footerY;
+    
+    doc
+      .fontSize(10) // Reduced from 11
+      .font('Helvetica')
+      .fillColor('#34495e')
+      .text('National Statistics Bureau', {
+        align: 'center',
+      })
+      .moveDown(0.25); // Reduced from 0.3
+
+    doc
+      .fontSize(10) // Reduced from 11
+      .font('Helvetica')
+      .fillColor('#34495e')
+      .text('Royal Government of Bhutan', {
+        align: 'center',
+      })
+      .moveDown(0.25); // Reduced from 0.3
+
+    doc
+      .fontSize(10) // Reduced from 11
+      .font('Helvetica')
+      .fillColor('#2980b9')
+      .text('www.nsb.gov.bt', {
+        align: 'center',
+      });
+
+    // Ensure we don't exceed page height - add new page for main content
+    // Check if content would exceed page, if so, adjust
+    if (doc.y > pageHeight - bottomMargin) {
+      // If footer would exceed, move it up slightly
+      doc.y = pageHeight - bottomMargin - 40;
+    }
+
+    // Add new page for main content
+    doc.addPage();
   }
 
   /**
@@ -155,12 +292,15 @@ export class PdfGeneratorService {
         doc.addPage();
       }
 
-      // Dzongkhag header
+      // Add spacing above Dzongkhag title
+      doc.moveDown(1);
+
+      // Dzongkhag header - Format: "Bumthang | Dzongkhag Code 01" - Left aligned
       doc
         .fontSize(12)
         .font('Helvetica-Bold')
         .fillColor('#2980b9')
-        .text(`${dz.name} (${dz.code})`, { align: 'left' })
+        .text(`${dz.name} | Dzongkhag Code ${dz.code}`, { align: 'left' })
         .moveDown(0.5);
 
       // Summary table
@@ -176,7 +316,7 @@ export class PdfGeneratorService {
           .text('Urban Enumeration Areas', { align: 'left' })
           .moveDown(0.3);
         this.buildEATable(doc, dz.urbanEAs, true);
-  }
+      }
 
       // Rural EAs table
       if (dz.ruralEAs && dz.ruralEAs.length > 0) {
@@ -255,7 +395,7 @@ export class PdfGeneratorService {
   }
 
   /**
-   * Build EA table
+   * Build EA table with dynamic columns: Thromde/Gewog, Thromde/Gewog Code, Chiwog/LAP, Chiwog/LAP Code, EA, EA Code
    */
   private buildEATable(
     doc: PDFKit.PDFDocument,
@@ -269,20 +409,35 @@ export class PdfGeneratorService {
     const margin = 40;
     const tableWidth = pageWidth - (margin * 2);
 
-    // Column widths: EA Code (auto), EA Name (*), Zone (*), SubZone (*)
-    const codeWidth = 80;
-    const remainingWidth = tableWidth - codeWidth;
-    const nameWidth = remainingWidth / 3;
-    const zoneWidth = remainingWidth / 3;
-    const subZoneWidth = remainingWidth / 3;
+    // Determine column headers based on type (dynamic)
+    const adminZoneLabel = isUrban ? 'Thromde' : 'Gewog';
+    const adminZoneCodeLabel = isUrban ? 'Thromde Code' : 'Gewog Code';
+    const subZoneLabel = isUrban ? 'LAP' : 'Chiwog';
+    const subZoneCodeLabel = isUrban ? 'LAP Code' : 'Chiwog Code';
+
+    // Column widths: 6 columns total
+    // Thromde/Gewog, Thromde/Gewog Code, Chiwog/LAP, Chiwog/LAP Code, EA, EA Code
+    const columnWidth = tableWidth / 6;
+    const widths = [
+      columnWidth, // Thromde/Gewog
+      columnWidth, // Thromde/Gewog Code
+      columnWidth, // Chiwog/LAP
+      columnWidth, // Chiwog/LAP Code
+      columnWidth, // EA
+      columnWidth, // EA Code
+    ];
 
     // Headers
-    const headers = isUrban
-      ? ['EA Code', 'EA Name', 'Thromde', 'LAP']
-      : ['EA Code', 'EA Name', 'Gewog', 'Chiwog'];
+    const headers = [
+      adminZoneLabel,
+      adminZoneCodeLabel,
+      subZoneLabel,
+      subZoneCodeLabel,
+      'EA',
+      'EA Code',
+    ];
 
     let x = margin;
-    const widths = [codeWidth, nameWidth, zoneWidth, subZoneWidth];
 
     doc.font('Helvetica-Bold').fontSize(9);
     for (let i = 0; i < headers.length; i++) {
@@ -290,7 +445,7 @@ export class PdfGeneratorService {
       doc
         .rect(x, tableTop, widths[i], cellHeight)
         .fill('#34495e');
-      // Draw text in white
+      // Draw text in white - all headers left-aligned
       doc.fillColor('#ffffff');
       doc.text(headers[i], x + cellPadding, tableTop + cellPadding, {
         width: widths[i] - cellPadding * 2,
@@ -316,7 +471,7 @@ export class PdfGeneratorService {
           doc
             .rect(x, currentY, widths[i], cellHeight)
             .fill('#34495e');
-          // Draw text in white
+          // Draw text in white - all headers left-aligned
           doc.fillColor('#ffffff');
           doc.text(headers[i], x + cellPadding, currentY + cellPadding, {
             width: widths[i] - cellPadding * 2,
@@ -328,11 +483,14 @@ export class PdfGeneratorService {
         doc.font('Helvetica').fontSize(8).fillColor('black');
       }
 
+      // Row data: Thromde/Gewog, Thromde/Gewog Code, Chiwog/LAP, Chiwog/LAP Code, EA, EA Code
       const rowData = [
-        ea.eaCode,
-        ea.eaName,
-        `${ea.administrativeZone.name} (${ea.administrativeZone.code})`,
-        `${ea.subAdministrativeZone.name} (${ea.subAdministrativeZone.code})`,
+        ea.administrativeZone.name, // Thromde/Gewog
+        ea.administrativeZone.code, // Thromde/Gewog Code
+        ea.subAdministrativeZone.name, // Chiwog/LAP
+        ea.subAdministrativeZone.code, // Chiwog/LAP Code
+        ea.eaName, // EA
+        ea.eaCode, // EA Code
       ];
 
       x = margin;
@@ -340,9 +498,11 @@ export class PdfGeneratorService {
         doc
           .rect(x, currentY, widths[i], cellHeight)
           .stroke('#cccccc');
-        doc.text(rowData[i], x + cellPadding, currentY + cellPadding, {
+        // EA column (index 4) should be right-aligned
+        const textAlign = i === 4 ? 'right' : 'left';
+        doc.text(String(rowData[i]), x + cellPadding, currentY + cellPadding, {
           width: widths[i] - cellPadding * 2,
-          align: 'left',
+          align: textAlign,
         });
         x += widths[i];
       }

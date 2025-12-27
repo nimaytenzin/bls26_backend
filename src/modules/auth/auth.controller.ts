@@ -345,6 +345,17 @@ export class AuthController {
   // ============ DZONGKHAG ASSIGNMENT ROUTES ============
 
   /**
+   * Get dzongkhags assigned to the current authenticated supervisor
+   * @access Protected - Supervisor only
+   */
+  @Get('my-dzongkhags')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPERVISOR)
+  async getMyDzongkhags(@Request() req) {
+    return this.authService.getSupervisorDzongkhags(req.user.id);
+  }
+
+  /**
    * Assign dzongkhags to a supervisor
    * @access Protected - Admin only
    */

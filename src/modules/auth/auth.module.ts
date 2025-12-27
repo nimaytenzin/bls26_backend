@@ -7,6 +7,9 @@ import { User } from './entities/user.entity';
 import { SupervisorDzongkhag } from './entities/supervisor-dzongkhag.entity';
 import { SurveyEnumerator } from '../survey/survey-enumerator/entities/survey-enumerator.entity';
 import { JwtStrategy } from './guards/jwt.strategy';
+import { SupervisorHelperService } from './services/supervisor-helper.service';
+import { EnumerationArea } from '../location/enumeration-area/entities/enumeration-area.entity';
+import { SurveyEnumerationArea } from '../survey/survey-enumeration-area/entities/survey-enumeration-area.entity';
 
 @Module({
   imports: [
@@ -20,6 +23,7 @@ import { JwtStrategy } from './guards/jwt.strategy';
   providers: [
     AuthService,
     JwtStrategy,
+    SupervisorHelperService,
     {
       provide: 'USER_REPOSITORY',
       useValue: User,
@@ -32,7 +36,15 @@ import { JwtStrategy } from './guards/jwt.strategy';
       provide: 'SURVEY_ENUMERATOR_REPOSITORY',
       useValue: SurveyEnumerator,
     },
+    {
+      provide: 'ENUMERATION_AREA_REPOSITORY',
+      useValue: EnumerationArea,
+    },
+    {
+      provide: 'SURVEY_ENUMERATION_AREA_REPOSITORY',
+      useValue: SurveyEnumerationArea,
+    },
   ],
-  exports: [AuthService],
+  exports: [AuthService, SupervisorHelperService],
 })
 export class AuthModule {}

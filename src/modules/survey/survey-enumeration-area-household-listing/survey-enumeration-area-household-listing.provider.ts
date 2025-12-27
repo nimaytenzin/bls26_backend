@@ -3,6 +3,10 @@ import { SurveyEnumerationArea } from '../survey-enumeration-area/entities/surve
 import { Survey } from '../survey/entities/survey.entity';
 import { EnumerationArea } from '../../location/enumeration-area/entities/enumeration-area.entity';
 import { SurveyEnumerationAreaStructure } from '../survey-enumeration-area-structure/entities/survey-enumeration-area-structure.entity';
+import { SurveyEnumerationAreaSampling } from '../../sampling/entities/survey-enumeration-area-sampling.entity';
+import { SurveyEnumerationAreaHouseholdSample } from '../../sampling/entities/survey-enumeration-area-household-sample.entity';
+import { AdministrativeZone } from '../../location/administrative-zone/entities/administrative-zone.entity';
+import { SubAdministrativeZone } from '../../location/sub-administrative-zone/entities/sub-administrative-zone.entity';
 
 export const surveyEnumerationAreaHouseholdListingProviders = [
   {
@@ -24,5 +28,21 @@ export const surveyEnumerationAreaHouseholdListingProviders = [
   {
     provide: 'SURVEY_ENUMERATION_AREA_STRUCTURE_REPOSITORY',
     useValue: SurveyEnumerationAreaStructure,
+  },
+  {
+    provide: 'SURVEY_EA_SAMPLING_REPOSITORY',
+    useValue: SurveyEnumerationAreaSampling,
+  },
+  {
+    provide: 'SURVEY_EA_HOUSEHOLD_SAMPLE_REPOSITORY',
+    useValue: SurveyEnumerationAreaHouseholdSample,
+  },
+  {
+    provide: 'ADMINISTRATIVE_ZONE_REPOSITORY',
+    useValue: AdministrativeZone,
+  },
+  {
+    provide: 'SUB_ADMINISTRATIVE_ZONE_REPOSITORY',
+    useValue: SubAdministrativeZone,
   },
 ];
