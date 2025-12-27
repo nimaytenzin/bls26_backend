@@ -21,6 +21,7 @@ import { SurveyService } from './survey.service';
 import { SurveySchedulerService } from './survey-scheduler.service';
 import { CreateSurveyDto } from './dto/create-survey.dto';
 import { UpdateSurveyDto } from './dto/update-survey.dto';
+import { SaveSurveyDto } from './dto/save-survey.dto';
 import { SurveyStatisticsResponseDto } from './dto/survey-statistics-response.dto';
 import { SurveyEnumerationHierarchyDto } from './dto/survey-enumeration-hierarchy-response.dto';
 import { BulkHouseholdUploadDto } from './dto/bulk-household-upload.dto';
@@ -43,6 +44,68 @@ export class SurveyController {
   @Roles(UserRole.ADMIN)
   async create(@Body() createSurveyDto: CreateSurveyDto) {
     return this.surveyService.create(createSurveyDto);
+  }
+
+  /**
+   * Save (create or update) a survey
+   * If id is provided and the survey exists, it will be updated
+   * If id is not provided or the survey doesn't exist, a new survey will be created
+   * 
+   * @access Protected - Admin only
+   * @route POST /survey/save
+   * 
+   * @param saveSurveyDto - Survey data with optional id field
+   *   - id (optional): If provided and exists, updates the survey
+   *   - name (required): Survey name
+   *   - description (required): Survey description
+   *   - startDate (required): Survey start date (ISO date string)
+   *   - endDate (required): Survey end date (ISO date string)
+   *   - year (required): Survey year
+   *   - status (optional): Survey status (ACTIVE | ENDED)
+   *   - isSubmitted (optional): Whether survey is submitted
+   *   - isVerified (optional): Whether survey is verified
+   *   - enumerationAreaIds (optional): Array of enumeration area IDs to associate
+   * 
+   * @returns Saved survey with enumeration areas included
+   * 
+   * @throws {UnauthorizedException} If JWT token is missing or invalid (401)
+   * @throws {ForbiddenException} If user does not have Admin role (403)
+   * @throws {BadRequestException} If request validation fails (400)
+   * 
+   * @example Create new survey
+   * ```json
+   * POST /survey/save
+   * Body: {
+   *   "name": "2024 National Survey",
+   *   "description": "Annual national survey",
+   *   "startDate": "2024-01-01",
+   *   "endDate": "2024-12-31",
+   *   "year": 2024,
+   *   "status": "ACTIVE",
+   *   "enumerationAreaIds": [1, 2, 3]
+   * }
+   * ```
+   * 
+   * @example Update existing survey
+   * ```json
+   * POST /survey/save
+   * Body: {
+   *   "id": 1,
+   *   "name": "2024 National Survey Updated",
+   *   "description": "Updated description",
+   *   "startDate": "2024-01-01",
+   *   "endDate": "2024-12-31",
+   *   "year": 2024,
+   *   "status": "ACTIVE",
+   *   "enumerationAreaIds": [1, 2, 3, 4]
+   * }
+   * ```
+   */
+  @Post('save')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async save(@Body() saveSurveyDto: SaveSurveyDto) {
+    return this.surveyService.save(saveSurveyDto);
   }
 
   /**

@@ -1,6 +1,7 @@
 import { Inject, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { CreateSurveyDto } from './dto/create-survey.dto';
 import { UpdateSurveyDto } from './dto/update-survey.dto';
+import { SaveSurveyDto } from './dto/save-survey.dto';
 import { SurveyStatisticsResponseDto } from './dto/survey-statistics-response.dto';
 import { SurveyEnumerationHierarchyDto } from './dto/survey-enumeration-hierarchy-response.dto';
 import { Survey, SurveyStatus } from './entities/survey.entity';
@@ -47,6 +48,63 @@ export class SurveyService {
     const { enumerationAreaIds, ...surveyData } = createSurveyDto;
 
     // Create the survey
+    const survey = await this.surveyRepository.create(
+      instanceToPlain(surveyData),
+    );
+
+    // Associate enumeration areas if provided
+    if (enumerationAreaIds && enumerationAreaIds.length > 0) {
+      const surveyEAs = enumerationAreaIds.map((eaId) => ({
+        surveyId: survey.id,
+        enumerationAreaId: eaId,
+      }));
+      await this.surveyEnumerationAreaRepository.bulkCreate(surveyEAs);
+    }
+
+    return this.findOne(survey.id);
+  }
+
+  /**
+   * Save (create or update) a survey
+   * If id is provided and exists, updates the survey
+   * If id is not provided or doesn't exist, creates a new survey
+   * @param saveSurveyDto - Survey data with optional id
+   * @returns Saved survey with relations
+   */
+  async save(saveSurveyDto: SaveSurveyDto): Promise<Survey> {
+    const { id, enumerationAreaIds, ...surveyData } = saveSurveyDto;
+
+    // If id is provided, try to update existing survey
+    if (id) {
+      const existingSurvey = await this.surveyRepository.findByPk(id);
+      if (existingSurvey) {
+        // Update existing survey
+        await this.surveyRepository.update(instanceToPlain(surveyData), {
+          where: { id },
+        });
+
+        // Update enumeration areas if provided
+        if (enumerationAreaIds !== undefined) {
+          // Remove existing associations
+          await this.surveyEnumerationAreaRepository.destroy({
+            where: { surveyId: id },
+          });
+
+          // Add new associations
+          if (enumerationAreaIds.length > 0) {
+            const surveyEAs = enumerationAreaIds.map((eaId) => ({
+              surveyId: id,
+              enumerationAreaId: eaId,
+            }));
+            await this.surveyEnumerationAreaRepository.bulkCreate(surveyEAs);
+          }
+        }
+
+        return this.findOne(id);
+      }
+    }
+
+    // Create new survey (id not provided or survey doesn't exist)
     const survey = await this.surveyRepository.create(
       instanceToPlain(surveyData),
     );
