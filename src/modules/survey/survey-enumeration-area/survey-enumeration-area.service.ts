@@ -824,16 +824,18 @@ export class SurveyEnumerationAreaService {
       );
     }
 
-    const normalizeCode = (value: string): string => {
-      const trimmed = (value || '').trim();
-      if (!trimmed) {
+    const normalizeCode = (value: string | number): string => {
+      // Convert to string first (handles both string and number inputs from CSV)
+      const strValue = String(value || '').trim();
+      if (!strValue) {
         return '';
       }
-      // If purely numeric and only 1 digit, pad to 2 digits to restore leading zero
-      if (/^\d+$/.test(trimmed) && trimmed.length === 1) {
-        return trimmed.padStart(2, '0');
+      // If purely numeric, ensure it's a two-character string
+      // 1-9 => "01"-"09", 10+ => "10", "11", etc. (padStart only pads if length < 2)
+      if (/^\d+$/.test(strValue)) {
+        return strValue.padStart(2, '0');
       }
-      return trimmed;
+      return strValue;
     };
 
     // Parse data rows
