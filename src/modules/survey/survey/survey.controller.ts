@@ -49,146 +49,11 @@ export class SurveyController {
     return this.surveyService.create(createSurveyDto);
   }
 
-  /**
-   * Save (create or update) a survey
-   * If id is provided and the survey exists, it will be updated
-   * If id is not provided or the survey doesn't exist, a new survey will be created
-   * 
-   * @access Protected - Admin only
-   * @route POST /survey/save
-   * 
-   * @param saveSurveyDto - Survey data with optional id field
-   *   - id (optional): If provided and exists, updates the survey
-   *   - name (required): Survey name
-   *   - description (required): Survey description
-   *   - startDate (required): Survey start date (ISO date string)
-   *   - endDate (required): Survey end date (ISO date string)
-   *   - year (required): Survey year
-   *   - status (optional): Survey status (ACTIVE | ENDED)
-   *   - isSubmitted (optional): Whether survey is submitted
-   *   - isVerified (optional): Whether survey is verified
-   *   - enumerationAreaIds (optional): Array of enumeration area IDs to associate
-   * 
-   * @returns Saved survey with enumeration areas included
-   * 
-   * @throws {UnauthorizedException} If JWT token is missing or invalid (401)
-   * @throws {ForbiddenException} If user does not have Admin role (403)
-   * @throws {BadRequestException} If request validation fails (400)
-   * 
-   * @example Create new survey
-   * ```json
-   * POST /survey/save
-   * Body: {
-   *   "name": "2024 National Survey",
-   *   "description": "Annual national survey",
-   *   "startDate": "2024-01-01",
-   *   "endDate": "2024-12-31",
-   *   "year": 2024,
-   *   "status": "ACTIVE",
-   *   "enumerationAreaIds": [1, 2, 3]
-   * }
-   * ```
-   * 
-   * @example Update existing survey
-   * ```json
-   * POST /survey/save
-   * Body: {
-   *   "id": 1,
-   *   "name": "2024 National Survey Updated",
-   *   "description": "Updated description",
-   *   "startDate": "2024-01-01",
-   *   "endDate": "2024-12-31",
-   *   "year": 2024,
-   *   "status": "ACTIVE",
-   *   "enumerationAreaIds": [1, 2, 3, 4]
-   * }
-   * ```
-   */
   @Post('save')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   async save(@Body() saveSurveyDto: SaveSurveyDto) {
     return this.surveyService.save(saveSurveyDto);
-  }
-
-  /**
-   * Bulk upload household counts for multiple EA-survey combinations
-   * 
-   * Automatically creates SurveyEnumerationArea records if they don't exist and
-   * generates blank household listings based on the specified household counts.
-   * 
-   * **Important Behavior:**
-   * - If data already exists for the same EA-Survey combination, existing household
-   *   listings and structures are **deleted and replaced** (not appended)
-   * - All uploaded data is automatically **published** (isPublished = true)
-   * - This endpoint processes all items even if some fail
-   * 
-   * @access Admin only
-   * @route POST /survey/auto-household-upload
-   * 
-   * @param dto - Bulk upload DTO containing array of items with:
-   *   - enumerationAreaId: number (required, must exist)
-   *   - surveyId: number (required, must exist)
-   *   - householdCount: number (required, >= 0, 0 will be skipped)
-   * @param req - Request object containing authenticated user information
-   * 
-   * @returns BulkHouseholdUploadResponseDto containing:
-   *   - totalItems: Total number of items processed
-   *   - created: Number of SurveyEnumerationArea records created
-   *   - skipped: Number of items skipped (householdCount = 0)
-   *   - householdListingsCreated: Total household listings created
-   *   - errors: Array of errors with reason for each failed item
-   * 
-   * @throws {Error} If user ID is not found in request (500)
-   * @throws {UnauthorizedException} If JWT token is missing or invalid (401)
-   * @throws {ForbiddenException} If user does not have Admin role (403)
-   * @throws {BadRequestException} If request validation fails (400)
-   * 
-   * @example
-   * ```json
-   * POST /survey/auto-household-upload
-   * Body: {
-   *   "items": [
-   *     {
-   *       "enumerationAreaId": 1,
-   *       "surveyId": 1,
-   *       "householdCount": 25
-   *     },
-   *     {
-   *       "enumerationAreaId": 2,
-   *       "surveyId": 1,
-   *       "householdCount": 30
-   *     }
-   *   ]
-   * }
-   * ```
-   * 
-   * @example Response
-   * ```json
-   * {
-   *   "totalItems": 2,
-   *   "created": 2,
-   *   "skipped": 0,
-   *   "householdListingsCreated": 55,
-   *   "errors": []
-   * }
-   * ```
-   * 
-   * @see {@link BulkHouseholdUploadDto} for request structure
-   * @see {@link BulkHouseholdUploadResponseDto} for response structure
-   */
-  @Post('auto-household-upload')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  async bulkUploadHouseholdCounts(
-    @Body() dto: BulkHouseholdUploadDto,
-    @Request() req,
-  ): Promise<BulkHouseholdUploadResponseDto> {
-    const userId = req.user?.id;
-    if (!userId) {
-      throw new Error('User ID not found in request');
-    }
-    return this.surveyService.bulkUploadHouseholdCounts(dto, userId);
   }
 
   /**
@@ -239,10 +104,6 @@ export class SurveyController {
     return this.surveyService.bulkUploadHouseholdCountsFromCsv(file.buffer, userId);
   }
 
-  @Get()
-  async findAll() {
-    return this.surveyService.findAll();
-  }
 
   /**
    * Get all active surveys (no pagination)
@@ -288,7 +149,7 @@ export class SurveyController {
 
   @Get(':id/statistics')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
+  @Roles(UserRole.ADMIN)
   async getSurveyStatistics(
     @Param('id') id: string,
   ): Promise<SurveyStatisticsResponseDto> {
@@ -389,16 +250,5 @@ export class SurveyController {
     return this.surveyService.updateStatus(+id, body.status as any);
   }
 
-  /**
-   * Manually trigger the cron job to mark expired surveys as ENDED
-   * Useful for testing or immediate execution
-   * @access Protected - Admin only
-   */
-  @Post('mark-expired-as-ended')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  @HttpCode(HttpStatus.OK)
-  async manuallyMarkExpiredSurveysAsEnded() {
-    return this.surveySchedulerService.manuallyMarkExpiredSurveysAsEnded();
-  }
+ 
 }

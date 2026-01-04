@@ -7,6 +7,7 @@ import { SurveyEnumerationAreaSampling } from '../../sampling/entities/survey-en
 import { SurveyEnumerationAreaHouseholdSample } from '../../sampling/entities/survey-enumeration-area-household-sample.entity';
 import { AdministrativeZone } from '../../location/administrative-zone/entities/administrative-zone.entity';
 import { SubAdministrativeZone } from '../../location/sub-administrative-zone/entities/sub-administrative-zone.entity';
+import { Dzongkhag } from '../../location/dzongkhag/entities/dzongkhag.entity';
 
 export const surveyEnumerationAreaHouseholdListingProviders = [
   {
@@ -44,5 +45,9 @@ export const surveyEnumerationAreaHouseholdListingProviders = [
   {
     provide: 'SUB_ADMINISTRATIVE_ZONE_REPOSITORY',
     useValue: SubAdministrativeZone,
+  },
+  {
+    provide: 'DZONGKHAG_REPOSITORY',
+    useValue: Dzongkhag,
   },
 ];

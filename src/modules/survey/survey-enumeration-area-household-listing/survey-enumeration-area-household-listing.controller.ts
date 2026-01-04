@@ -336,6 +336,56 @@ export class SurveyEnumerationAreaHouseholdListingController {
   }
 
   /**
+   * Export all household listings for a survey as CSV (Admin only)
+   * Downloads CSV for all dzongkhags in the survey
+   * @param surveyId - Survey ID
+   * @returns CSV file containing all household listings for the survey
+   * @access Admin only
+   */
+  @Get('by-survey/:surveyId/export/csv')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Header('Content-Type', 'text/csv')
+  async exportSurveyHouseholdListingsCSV(
+    @Param('surveyId', ParseIntPipe) surveyId: number,
+    @Res() res: Response,
+  ) {
+    const csvContent =
+      await this.surveyEnumerationAreaHouseholdListingService.generateSurveyCSVExport(
+        surveyId,
+      );
+    res.set({
+      'Content-Disposition': `attachment; filename="household_listings_survey_${surveyId}_${Date.now()}.csv"`,
+    });
+    res.send(csvContent);
+  }
+
+  /**
+   * Export all household listings for a survey enumeration area as CSV (Admin only)
+   * Downloads CSV for a specific enumeration area
+   * @param surveyEnumerationAreaId - Survey Enumeration Area ID
+   * @returns CSV file containing all household listings for the enumeration area
+   * @access Admin only
+   */
+  @Get('by-survey-ea/:surveyEnumerationAreaId/export/csv')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Header('Content-Type', 'text/csv')
+  async exportEnumerationAreaHouseholdListingsCSV(
+    @Param('surveyEnumerationAreaId', ParseIntPipe) surveyEnumerationAreaId: number,
+    @Res() res: Response,
+  ) {
+    const csvContent =
+      await this.surveyEnumerationAreaHouseholdListingService.generateEnumerationAreaCSVExport(
+        surveyEnumerationAreaId,
+      );
+    res.set({
+      'Content-Disposition': `attachment; filename="household_listings_ea_${surveyEnumerationAreaId}_${Date.now()}.csv"`,
+    });
+    res.send(csvContent);
+  }
+
+  /**
    * Export all household listings for a survey enumeration area as ZIP (CSV + metadata TXT)
    * @param surveyEnumerationAreaId - Survey Enumeration Area ID
    * @returns ZIP file containing CSV and metadata TXT

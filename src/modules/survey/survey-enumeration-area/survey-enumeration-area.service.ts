@@ -687,6 +687,37 @@ export class SurveyEnumerationAreaService {
   }
 
   /**
+   * Remove enumeration areas from a survey
+   * @param surveyId - Survey ID
+   * @param enumerationAreaIds - Array of enumeration area IDs to remove
+   */
+  async removeEnumerationAreasFromSurvey(
+    surveyId: number,
+    enumerationAreaIds: number[],
+  ) {
+    // Verify survey exists
+    const survey = await this.surveyRepository.findByPk(surveyId);
+    if (!survey) {
+      throw new BadRequestException(`Survey with ID ${surveyId} not found`);
+    }
+
+    // Remove enumeration areas from survey
+    const deleted = await this.surveyEnumerationAreaRepository.destroy({
+      where: {
+        surveyId,
+        enumerationAreaId: { [Op.in]: enumerationAreaIds },
+      },
+    });
+
+    return {
+      deleted: true,
+      deletedCount: deleted,
+      surveyId,
+      enumerationAreaIds,
+    };
+  }
+
+  /**
    * Generate CSV template for bulk upload of enumeration areas
    * Template includes: Dzongkhag Code, Gewog/Thromde Code, Chiwog/Lap Code, Enumeration Code
    * @returns CSV template string

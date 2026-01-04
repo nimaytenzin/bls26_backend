@@ -19,6 +19,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { SurveyEnumeratorService } from './survey-enumerator.service';
 import { UpdateSurveyEnumeratorDto } from './dto/update-survey-enumerator.dto';
+import { CreateSingleEnumeratorDto } from './dto/create-single-enumerator.dto';
 import { EnumeratorCsvRowDto } from './dto/bulk-assign-csv.dto';
 import { ResetEnumeratorPasswordDto } from '../../supervisor/dto/reset-enumerator-password.dto';
 import { UpdateEnumeratorDto } from '../../supervisor/dto/update-enumerator.dto';
@@ -26,6 +27,8 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { UserRole } from '../../auth/entities/user.entity';
+import { SupervisorHelperService } from '../../auth/services/supervisor-helper.service';
+import { ForbiddenException } from '@nestjs/common';
 
 @Controller('supervisor/survey-enumerator')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -33,6 +36,7 @@ import { UserRole } from '../../auth/entities/user.entity';
 export class SurveyEnumeratorSupervisorController {
   constructor(
     private readonly surveyEnumeratorService: SurveyEnumeratorService,
+    private readonly supervisorHelperService: SupervisorHelperService,
   ) {}
 
   /**
@@ -50,6 +54,39 @@ export class SurveyEnumeratorSupervisorController {
       supervisorId,
       surveyId,
     );
+  }
+
+  /**
+   * Create a single enumerator with dzongkhag assignments (with access check)
+   * Creates user if they don't exist and assigns them to the survey
+   * Verifies all dzongkhags are accessible to supervisor
+   * 
+   * @param createDto - Enumerator data with dzongkhag assignments
+   * @param req
+   */
+  @Post('single')
+  async createSingleEnumerator(
+    @Body() createDto: CreateSingleEnumeratorDto,
+    @Request() req,
+  ) {
+    const supervisorId = req.user?.id;
+
+    // Verify all dzongkhags are accessible to supervisor
+    for (const dzongkhagId of createDto.dzongkhagIds) {
+      const hasAccess =
+        await this.supervisorHelperService.verifySupervisorAccessToDzongkhag(
+          supervisorId,
+          dzongkhagId,
+        );
+
+      if (!hasAccess) {
+        throw new ForbiddenException(
+          `You do not have access to dzongkhag ${dzongkhagId}`,
+        );
+      }
+    }
+
+    return this.surveyEnumeratorService.createSingleEnumerator(createDto);
   }
 
   /**
@@ -109,8 +146,48 @@ export class SurveyEnumeratorSupervisorController {
 
   /**
    * Parse CSV content to EnumeratorCsvRowDto array
+   * Validates required headers and returns clear error messages
    * @param csvContent
    */
+  /**
+   * Parse a CSV line respecting quoted fields that may contain commas
+   * @param line - CSV line to parse
+   * @returns Array of field values
+   */
+  private parseCsvLine(line: string): string[] {
+    const values: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const nextChar = line[i + 1];
+
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          // Escaped quote (double quote)
+          current += '"';
+          i++; // Skip next quote
+        } else {
+          // Toggle quote state
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        // Field separator (only if not in quotes)
+        values.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+
+    // Add the last field
+    values.push(current.trim());
+
+    // Remove surrounding quotes from each value
+    return values.map((v) => v.replace(/^"|"$/g, ''));
+  }
+
   private parseCsv(csvContent: string): EnumeratorCsvRowDto[] {
     const lines = csvContent.split('\n').filter((line) => line.trim());
     if (lines.length < 2) {
@@ -121,7 +198,7 @@ export class SurveyEnumeratorSupervisorController {
 
     // Parse header
     const headerLine = lines[0].trim();
-    const headers = headerLine.split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+    const headers = this.parseCsvLine(headerLine);
 
     // Find column indices
     const findColumnIndex = (
@@ -141,6 +218,7 @@ export class SurveyEnumeratorSupervisorController {
       return -1;
     };
 
+    // Required headers
     const nameIndex = findColumnIndex(
       ['Name', 'name'],
       [(h) => h.includes('name')],
@@ -149,6 +227,12 @@ export class SurveyEnumeratorSupervisorController {
       ['CID', 'cid'],
       [(h) => h.includes('cid')],
     );
+    const dzongkhagCodesIndex = findColumnIndex(
+      ['Dzongkhag Codes', 'dzongkhagCodes', 'DzongkhagCodes'],
+      [(h) => h.includes('dzongkhag') && h.includes('codes')],
+    );
+
+    // Optional headers
     const emailIndex = findColumnIndex(
       ['Email Address', 'emailAddress', 'EmailAddress', 'Email'],
       [(h) => h.includes('email')],
@@ -161,10 +245,25 @@ export class SurveyEnumeratorSupervisorController {
       ['Password', 'password'],
       [(h) => h.includes('password')],
     );
-    const dzongkhagCodeIndex = findColumnIndex(
-      ['Dzongkhag Code', 'dzongkhagCode', 'DzongkhagCode'],
-      [(h) => h.includes('dzongkhag')],
-    );
+
+    // Validate required headers
+    const missingHeaders: string[] = [];
+    if (nameIndex < 0) {
+      missingHeaders.push('Name');
+    }
+    if (cidIndex < 0) {
+      missingHeaders.push('CID');
+    }
+    if (dzongkhagCodesIndex < 0) {
+      missingHeaders.push('Dzongkhag Codes');
+    }
+
+    if (missingHeaders.length > 0) {
+      throw new BadRequestException(
+        `CSV file is missing required headers: ${missingHeaders.join(', ')}. ` +
+        `Required headers are: Name, CID, Dzongkhag Codes`,
+      );
+    }
 
     // Parse data rows
     const enumerators: EnumeratorCsvRowDto[] = [];
@@ -172,14 +271,15 @@ export class SurveyEnumeratorSupervisorController {
       const line = lines[i].trim();
       if (!line) continue;
 
-      const values = line.split(',').map((v) => v.trim().replace(/^"|"$/g, ''));
+      // Use proper CSV parsing that handles quoted fields with commas
+      const values = this.parseCsvLine(line);
 
       if (cidIndex < 0 || !values[cidIndex]) {
         continue; // Skip rows without CID
       }
 
       const enumerator: EnumeratorCsvRowDto = {
-        name: nameIndex >= 0 && values[nameIndex] ? values[nameIndex] : '',
+        name: values[nameIndex] || '',
         cid: values[cidIndex],
         emailAddress:
           emailIndex >= 0 && values[emailIndex] ? values[emailIndex] : undefined,
@@ -189,10 +289,7 @@ export class SurveyEnumeratorSupervisorController {
           passwordIndex >= 0 && values[passwordIndex]
             ? values[passwordIndex]
             : undefined,
-        dzongkhagCode:
-          dzongkhagCodeIndex >= 0 && values[dzongkhagCodeIndex]
-            ? values[dzongkhagCodeIndex]
-            : '',
+        dzongkhagCodes: values[dzongkhagCodesIndex] || '',
       };
 
       enumerators.push(enumerator);
@@ -237,9 +334,15 @@ export class SurveyEnumeratorSupervisorController {
 
   /**
    * Edit details for their enumerators (with access check)
-   * Can update: name, emailAddress, phoneNumber, or assignment (surveyId, dzongkhagId)
+   * Can update: name, emailAddress, phoneNumber, or assignment (surveyId, dzongkhagIds)
+   * When dzongkhagIds is provided with surveyId, replaces all existing assignments with the new ones (no comparison, simple replace)
    * @param userId
-   * @param dto
+   * @param dto - Update data
+   * @param dto.name - Enumerator name (optional)
+   * @param dto.emailAddress - Email address (optional)
+   * @param dto.phoneNumber - Phone number (optional)
+   * @param dto.surveyId - Survey ID (required when updating assignments)
+   * @param dto.dzongkhagIds - Array of dzongkhag IDs to replace all assignments (optional)
    * @param req
    */
   @Patch(':userId')
@@ -257,7 +360,7 @@ export class SurveyEnumeratorSupervisorController {
   }
 
   /**
-   * Delete their enumerators (with access check)
+   * Soft delete their enumerators (set isActive to false) with access check
    * @param userId
    * @param surveyId
    * @param req
@@ -275,5 +378,114 @@ export class SurveyEnumeratorSupervisorController {
       surveyId,
     );
   }
+
+  /**
+   * Soft delete a specific enumerator assignment (set isActive to false) with access check
+   * @param userId
+   * @param surveyId
+   * @param dzongkhagId
+   * @param req
+   */
+  @Delete(':userId/:surveyId/:dzongkhagId/soft')
+  async softDelete(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Param('surveyId', ParseIntPipe) surveyId: number,
+    @Param('dzongkhagId', ParseIntPipe) dzongkhagId: number,
+    @Request() req,
+  ) {
+    const supervisorId = req.user?.id;
+    
+    // Verify enumerator belongs to supervisor
+    const belongsToSupervisor =
+      await this.supervisorHelperService.verifyEnumeratorBelongsToSupervisor(
+        supervisorId,
+        userId,
+      );
+
+    if (!belongsToSupervisor) {
+      throw new ForbiddenException(
+        'You do not have access to this enumerator',
+      );
+    }
+
+    await this.surveyEnumeratorService.softDelete(userId, surveyId, dzongkhagId);
+    return { message: 'Enumerator assignment soft deleted successfully' };
+  }
+
+  /**
+   * Soft delete all enumerator assignments for a user-survey combination (with access check)
+   * @param userId
+   * @param surveyId
+   * @param req
+   */
+  @Delete(':userId/:surveyId/soft')
+  async softDeleteAll(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Param('surveyId', ParseIntPipe) surveyId: number,
+    @Request() req,
+  ) {
+    const supervisorId = req.user?.id;
+    
+    // Verify enumerator belongs to supervisor
+    const belongsToSupervisor =
+      await this.supervisorHelperService.verifyEnumeratorBelongsToSupervisor(
+        supervisorId,
+        userId,
+      );
+
+    if (!belongsToSupervisor) {
+      throw new ForbiddenException(
+        'You do not have access to this enumerator',
+      );
+    }
+
+    const count = await this.surveyEnumeratorService.softDeleteAllForUserAndSurvey(
+      userId,
+      surveyId,
+    );
+    return {
+      message: 'All enumerator assignments soft deleted successfully',
+      deletedCount: count,
+    };
+  }
+
+   /**
+   * Reactivate user - Restore all soft-deleted enumerator assignments for a user-survey combination (set isActive to true) with access check
+   * @param userId
+   * @param surveyId
+   * @param req
+   */
+  @Post(':userId/:surveyId/restore')
+  async reactivateUser(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Param('surveyId', ParseIntPipe) surveyId: number,
+    @Request() req,
+  ) {
+    const supervisorId = req.user?.id;
+    
+    // Verify enumerator belongs to supervisor
+    const belongsToSupervisor =
+      await this.supervisorHelperService.verifyEnumeratorBelongsToSupervisor(
+        supervisorId,
+        userId,
+      );
+
+    if (!belongsToSupervisor) {
+      throw new ForbiddenException(
+        'You do not have access to this enumerator',
+      );
+    }
+
+    const count = await this.surveyEnumeratorService.restoreAllForUserAndSurvey(
+      userId,
+      surveyId,
+    );
+    return {
+      message: 'All enumerator assignments restored successfully',
+      restoredCount: count,
+    };
+  }
+
+
 }
 

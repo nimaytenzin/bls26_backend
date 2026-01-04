@@ -86,12 +86,6 @@ export class SurveySchedulerService {
     }
   }
 
-  /**
-   * Manual trigger for testing purposes
-   * Can be called via API endpoint if needed
-   */
-  async manuallyMarkExpiredSurveysAsEnded() {
-    return this.markExpiredSurveysAsEnded();
-  }
+
 }
 

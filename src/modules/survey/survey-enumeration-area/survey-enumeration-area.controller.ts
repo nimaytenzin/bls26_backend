@@ -232,6 +232,25 @@ export class SurveyEnumerationAreaController {
   }
 
   /**
+   * Remove enumeration areas from a survey (Admin only)
+   * @param surveyId - Survey ID
+   * @param body - Object containing enumerationAreaIds array
+   */
+  @Delete('by-survey/:surveyId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  removeEnumerationAreasFromSurvey(
+    @Param('surveyId', ParseIntPipe) surveyId: number,
+    @Body() body: { enumerationAreaIds: number[] },
+  ) {
+    return this.surveyEnumerationAreaService.removeEnumerationAreasFromSurvey(
+      surveyId,
+      body.enumerationAreaIds,
+    );
+  }
+
+  /**
    * Remove survey enumeration area assignment
    * @param id
    */

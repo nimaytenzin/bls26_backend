@@ -5,6 +5,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { Op } from 'sequelize';
 import { SurveyEnumerator } from '../survey/survey-enumerator/entities/survey-enumerator.entity';
 import { Survey } from '../survey/survey/entities/survey.entity';
 import { SurveyEnumerationArea } from '../survey/survey-enumeration-area/entities/survey-enumeration-area.entity';
@@ -80,19 +81,22 @@ export class EnumeratorRoutesService {
     enumeratorId: number,
     surveyId: number,
   ) {
-    // Verify the enumerator is assigned to this survey and get dzongkhag assignment
-    const assignment = await this.surveyEnumeratorRepository.findOne({
+    // Get all assignments for this enumerator and survey (can be multiple dzongkhags)
+    const assignments = await this.surveyEnumeratorRepository.findAll({
       where: {
         userId: enumeratorId,
         surveyId: surveyId,
       },
     });
 
-    if (!assignment) {
+    if (!assignments || assignments.length === 0) {
       throw new NotFoundException(
         'Survey not found or not assigned to this enumerator',
       );
     }
+
+    // Get all dzongkhag IDs from assignments
+    const dzongkhagIds = assignments.map((a) => a.dzongkhagId);
 
     // Get the survey basic info
     const survey = await this.surveyRepository.findByPk(surveyId);
@@ -121,7 +125,7 @@ export class EnumeratorRoutesService {
     );
 
     // Step 3: Load EnumerationAreas with full hierarchy (SAZ via junction -> AZ -> DZ)
-    // Filter SAZs by dzongkhagId at the AdministrativeZone level
+    // Filter SAZs by dzongkhagIds at the AdministrativeZone level
     const enumerationAreas = await EnumerationArea.findAll({
       where: { id: enumerationAreaIds },
       attributes: {
@@ -142,30 +146,41 @@ export class EnumeratorRoutesService {
                 exclude: ['geom'],
               },
               where: {
-                dzongkhagId: assignment.dzongkhagId,
+                dzongkhagId: { [Op.in]: dzongkhagIds },
               },
-              required: true, // INNER JOIN to filter by dzongkhagId
+              required: true, // INNER JOIN to filter by dzongkhagIds
             },
           ],
         },
       ],
     });
 
-    // Step 4: Load Dzongkhag separately
-    const dzongkhag = await Dzongkhag.findByPk(assignment.dzongkhagId, {
+    // Step 4: Load all Dzongkhags
+    const dzongkhags = await Dzongkhag.findAll({
+      where: { id: dzongkhagIds },
       attributes: {
         exclude: ['geom'],
       },
     });
+
+    // Create a map of dzongkhagId -> Dzongkhag for quick lookup
+    const dzongkhagMap = new Map(
+      dzongkhags.map((d) => [d.id, d]),
+    );
 
     // Step 5: Create a map of EnumerationArea ID -> EnumerationArea with hierarchy
     const enumerationAreaMap = new Map();
     enumerationAreas.forEach((ea) => {
       // Attach Dzongkhag to each AdministrativeZone
       ea.subAdministrativeZones?.forEach((saz) => {
-        if (saz.administrativeZone && dzongkhag) {
-          // Attach the Dzongkhag model instance so it gets serialized properly
-          (saz.administrativeZone as any).dzongkhag = dzongkhag;
+        if (saz.administrativeZone) {
+          const dzongkhag = dzongkhagMap.get(
+            (saz.administrativeZone as any).dzongkhagId,
+          );
+          if (dzongkhag) {
+            // Attach the Dzongkhag model instance so it gets serialized properly
+            (saz.administrativeZone as any).dzongkhag = dzongkhag;
+          }
         }
       });
       enumerationAreaMap.set(ea.id, ea);
@@ -193,8 +208,11 @@ export class EnumeratorRoutesService {
       // Ensure Dzongkhag is included in each AdministrativeZone
       if (eaJson?.subAdministrativeZones) {
         eaJson.subAdministrativeZones = eaJson.subAdministrativeZones.map((saz: any) => {
-          if (saz.administrativeZone && dzongkhag) {
-            saz.administrativeZone.dzongkhag = dzongkhag.toJSON();
+          if (saz.administrativeZone) {
+            const dzongkhag = dzongkhagMap.get(saz.administrativeZone.dzongkhagId);
+            if (dzongkhag) {
+              saz.administrativeZone.dzongkhag = dzongkhag.toJSON();
+            }
           }
           return saz;
         });

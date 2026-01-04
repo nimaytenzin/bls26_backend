@@ -7,6 +7,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { SurveyService } from './survey.service';
+import { SurveyEnumerationHierarchyDto } from './dto/survey-enumeration-hierarchy-response.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -29,7 +30,7 @@ export class SurveySupervisorController {
   getSurveyEnumerationHierarchy(
     @Param('surveyId', ParseIntPipe) surveyId: number,
     @Request() req,
-  ) {
+  ): Promise<SurveyEnumerationHierarchyDto> {
     const supervisorId = req.user?.id;
     return this.surveyService.getSurveyEnumerationHierarchyForSupervisor(
       surveyId,

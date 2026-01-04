@@ -54,6 +54,8 @@ export class SurveyEnumerationAreaHouseholdListingService {
     private readonly administrativeZoneRepository: typeof AdministrativeZone,
     @Inject('SUB_ADMINISTRATIVE_ZONE_REPOSITORY')
     private readonly subAdministrativeZoneRepository: typeof SubAdministrativeZone,
+    @Inject('DZONGKHAG_REPOSITORY')
+    private readonly dzongkhagRepository: typeof Dzongkhag,
     private readonly supervisorHelperService: SupervisorHelperService,
   ) {}
 
@@ -1249,21 +1251,36 @@ export class SurveyEnumerationAreaHouseholdListingService {
     const survey = surveyEA.survey;
     const ea = surveyEA.enumerationArea;
     const firstSAZ = ea?.subAdministrativeZones?.[0];
-    const saz = firstSAZ;
-    const az = firstSAZ?.administrativeZone;
-    const dzongkhag = az?.dzongkhag;
-
-    // Get supervisors for this dzongkhag
-    const dzongkhagWithSupervisors = await Dzongkhag.findByPk(dzongkhag?.id, {
-      include: [
-        {
-          model: User,
-          as: 'supervisors',
-          through: { attributes: [] },
-          attributes: ['id', 'name', 'cid', 'phoneNumber', 'emailAddress'],
-        },
-      ],
-    });
+    
+    // Fetch sub administrative zone separately to ensure all attributes (including areaCode) are loaded
+    let saz = firstSAZ;
+    if (!saz?.areaCode && firstSAZ?.id) {
+      saz = await this.subAdministrativeZoneRepository.findByPk(firstSAZ.id);
+    }
+    
+    // Fetch administrative zone separately to ensure all attributes (including areaCode) are loaded
+    let az = saz?.administrativeZone;
+    if (!az?.areaCode && saz?.administrativeZoneId) {
+      az = await this.administrativeZoneRepository.findByPk(saz.administrativeZoneId);
+    }
+    
+    // Ensure dzongkhag is loaded - fetch separately if not included
+    let dzongkhag = az?.dzongkhag;
+    if (!dzongkhag && az?.dzongkhagId) {
+      dzongkhag = await this.dzongkhagRepository.findByPk(az.dzongkhagId);
+    }
+    
+    // If still no dzongkhag, try to get it from the administrative zone
+    if (!dzongkhag && az) {
+      const adminZoneWithDzongkhag = await this.administrativeZoneRepository.findByPk(az.id, {
+        include: [{ model: Dzongkhag }],
+      });
+      dzongkhag = adminZoneWithDzongkhag?.dzongkhag;
+      // Also update az to ensure we have the latest data
+      if (adminZoneWithDzongkhag) {
+        az = adminZoneWithDzongkhag;
+      }
+    }
 
     // Get all household listings
     const listings = await this.householdListingRepository.findAll({
@@ -1276,6 +1293,7 @@ export class SurveyEnumerationAreaHouseholdListingService {
         },
         {
           model: SurveyEnumerationAreaStructure,
+          as: 'structure',
           attributes: ['id', 'structureNumber', 'latitude', 'longitude'],
         },
       ],
@@ -1298,8 +1316,8 @@ export class SurveyEnumerationAreaHouseholdListingService {
       'Gewog/Thromde Code',
       'Chiwog/Lap Name',
       'Chiwog/Lap Code',
-      'Enumeration Area Name',
-      'Full EA Code',
+      'EA',
+      'EA Code',
       'Structure Number',
       'Household Identification',
       'Household Serial Number',
@@ -1313,33 +1331,34 @@ export class SurveyEnumerationAreaHouseholdListingService {
       'Submitted Date',
     ];
 
-    // Build CSV rows with serial number
+    // Build CSV rows
     const rows = listings.map((listing, index) => {
       const submitter = listing.submitter;
+      const structure = listing.structure;
 
-      // Determine area type (Urban if THROMDE, Rural if GEWOG)
-      const areaType = az?.type === 'Thromde' ? 'Urban' : 'Rural';
-
-      // Build Full EA Code: Dzongkhag (2) + Admin Zone (2) + Sub Admin Zone (2) + EA (2) = 8 digits
-      const dzongkhagCode = (dzongkhag?.areaCode || '').padStart(2, '0');
-      const adminZoneCode = (az?.areaCode || '').padStart(2, '0');
-      const subAdminZoneCode = (saz?.areaCode || '').padStart(2, '0');
-      const eaCode = (ea?.areaCode || '').padStart(2, '0');
-      const fullEaCode = `${dzongkhagCode}${adminZoneCode}${subAdminZoneCode}${eaCode}`;
+      // Get dzongkhag code - ensure it's properly formatted
+      const dzongkhagCode = dzongkhag?.areaCode ? dzongkhag.areaCode.toString().padStart(2, '0') : '';
+      // Get admin zone code (Gewog/Thromde Code)
+      const adminZoneCode = az?.areaCode ? az.areaCode.toString().padStart(2, '0') : '';
+      // Get sub admin zone code (Chiwog/Lap Code)
+      const subAdminZoneCode = saz?.areaCode ? saz.areaCode.toString().padStart(2, '0') : '';
+      // Get EA code
+      const eaCode = ea?.areaCode ? ea.areaCode.toString().padStart(2, '0') : '';
 
       return [
-        (index + 1).toString(), // ID - serial number starting from 1
+        (index + 1).toString(), // ID - increment starting from 1
         dzongkhag?.name || '',
         dzongkhagCode,
-        areaType,
+        'Location', // Area Type - always "Location"
         az?.name || '',
         adminZoneCode,
         saz?.name || '',
         subAdminZoneCode,
         ea?.name || '',
-        fullEaCode,
-        listing.householdIdentification || '',
-        listing.householdSerialNumber?.toString() || '',
+        eaCode, // EA Code only (not full EA code)
+        structure?.structureNumber?.toString() || '', // Structure Number
+        listing.householdIdentification || '', // Household Identification
+        listing.householdSerialNumber?.toString() || '', // Household Serial Number
         listing.nameOfHOH || '',
         listing.totalMale?.toString() || '0',
         listing.totalFemale?.toString() || '0',

@@ -8,7 +8,7 @@ export class EnumeratorCsvRowDto {
   phoneNumber?: string;
   password?: string;
   role?: string;
-  dzongkhagCode: string; // Dzongkhag code (e.g., "01", "02")
+  dzongkhagCodes: string; // Comma-separated dzongkhag codes (e.g., "01,02,03") - REQUIRED
 }
 
 export class BulkAssignFromCsvDto {

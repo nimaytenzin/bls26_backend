@@ -1,17 +1,22 @@
 import {
   IsString,
-  IsEmail,
+  IsNotEmpty,
   IsOptional,
   IsInt,
-  IsPositive,
   IsArray,
   ArrayMinSize,
+  IsEmail,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 
-export class UpdateEnumeratorDto {
+export class CreateSingleEnumeratorDto {
   @IsString()
-  @IsOptional()
-  name?: string;
+  @IsNotEmpty()
+  name: string;
+
+  @IsString()
+  @IsNotEmpty()
+  cid: string;
 
   @IsEmail()
   @IsOptional()
@@ -21,16 +26,17 @@ export class UpdateEnumeratorDto {
   @IsOptional()
   phoneNumber?: string;
 
-  @IsInt()
-  @IsPositive()
+  @IsString()
   @IsOptional()
-  surveyId?: number;
+  password?: string;
+
+  @IsInt()
+  @IsNotEmpty()
+  surveyId: number;
 
   @IsArray()
   @ArrayMinSize(1)
   @IsInt({ each: true })
-  @IsPositive({ each: true })
-  @IsOptional()
-  dzongkhagIds?: number[]; // Array of dzongkhag IDs to replace assignments
+  dzongkhagIds: number[];
 }
 

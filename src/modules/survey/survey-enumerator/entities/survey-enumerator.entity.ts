@@ -16,8 +16,8 @@ import { Dzongkhag } from 'src/modules/location/dzongkhag/entities/dzongkhag.ent
   indexes: [
     {
       unique: true,
-      fields: ['userId', 'surveyId'],
-      name: 'survey_enumerators_user_survey_unique',
+      fields: ['userId', 'surveyId', 'dzongkhagId'],
+      name: 'survey_enumerators_user_survey_dzongkhag_unique',
     },
   ],
 })
@@ -41,9 +41,17 @@ export class SurveyEnumerator extends Model<SurveyEnumerator> {
   @ForeignKey(() => Dzongkhag)
   @Column({
     type: DataType.INTEGER,
-    allowNull: true,
+    allowNull: false, // Changed to NOT NULL since it's part of the key
+    primaryKey: true, // Added as part of composite primary key
   })
   dzongkhagId: number;
+
+  @Column({
+    type: DataType.BOOLEAN,
+    allowNull: false,
+    defaultValue: true,
+  })
+  isActive: boolean;
 
   // Relationships
   @BelongsTo(() => User)
