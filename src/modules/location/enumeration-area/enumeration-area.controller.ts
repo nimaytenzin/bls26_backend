@@ -936,4 +936,87 @@ export class EnumerationAreaController {
     };
     return this.enumerationAreaService.findAllMergedPaginated(query);
   }
+
+  /**
+   * Bulk upload enumeration areas by Sub-Administrative Zone
+   * @access Public
+   * @param subAdministrativeZoneId - Sub-Administrative Zone ID (automatically assigned to all EAs)
+   * @form multipart/form-data with field:
+   *   - file: GeoJSON FeatureCollection file (required)
+   *     Each Feature must have:
+   *     - geometry: GeoJSON geometry object (required)
+   *     - properties: Object with name, description, areaCode (all required)
+   *
+   * @returns Object with success count, skipped items, created EAs, and errors
+   *
+   * @example
+   * POST /enumeration-area/by-sub-administrative-zone/1/bulk-upload-geojson
+   */
+  @Post('by-sub-administrative-zone/:subAdministrativeZoneId/bulk-upload-geojson')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+      fileFilter: (req, file, cb) => {
+        if (
+          file.mimetype === 'application/json' ||
+          file.mimetype === 'application/geo+json' ||
+          file.originalname.endsWith('.geojson') ||
+          file.originalname.endsWith('.json')
+        ) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              'Invalid file type. Only .json or .geojson files are allowed.',
+            ),
+            false,
+          );
+        }
+      },
+    }),
+  )
+  async bulkUploadGeoJsonBySubAdministrativeZone(
+    @Param('subAdministrativeZoneId', ParseIntPipe) subAdministrativeZoneId: number,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    try {
+      // Parse the GeoJSON file
+      const geoJsonData = JSON.parse(file.buffer.toString('utf-8'));
+
+      // Validate it's a FeatureCollection
+      if (geoJsonData.type !== 'FeatureCollection') {
+        throw new BadRequestException(
+          'Invalid GeoJSON format. Must be a FeatureCollection.',
+        );
+      }
+
+      if (!geoJsonData.features || geoJsonData.features.length === 0) {
+        throw new BadRequestException(
+          'FeatureCollection contains no features.',
+        );
+      }
+
+      // Process the bulk upload with automatic subAdministrativeZoneId assignment
+      const result = await this.enumerationAreaService.bulkCreateFromGeoJsonBySubAdministrativeZone(
+        subAdministrativeZoneId,
+        geoJsonData.features,
+      );
+
+      return result;
+    } catch (error) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to process GeoJSON file: ${error.message}`,
+      );
+    }
+  }
 }

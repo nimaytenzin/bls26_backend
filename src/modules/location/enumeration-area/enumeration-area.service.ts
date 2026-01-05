@@ -225,6 +225,129 @@ export class EnumerationAreaService {
   }
 
   /**
+   * Bulk create enumeration areas from GeoJSON features for a specific Sub-Administrative Zone
+   * Automatically assigns the provided subAdministrativeZoneId to all created EAs
+   * @param subAdministrativeZoneId - Sub-Administrative Zone ID to assign to all EAs
+   * @param features - Array of GeoJSON Feature objects
+   * @returns Bulk creation result with success count, skipped items, and errors
+   */
+  async bulkCreateFromGeoJsonBySubAdministrativeZone(
+    subAdministrativeZoneId: number,
+    features: any[],
+  ): Promise<{
+    success: number;
+    skipped: number;
+    created: EnumerationArea[];
+    skippedItems: Array<{
+      areaCode: string;
+      subAdministrativeZoneIds: number[];
+      reason: string;
+    }>;
+    errors: Array<{
+      feature: any;
+      error: string;
+    }>;
+  }> {
+    // Validate subAdministrativeZoneId exists
+    const saz = await this.subAdministrativeZoneRepository.findByPk(subAdministrativeZoneId);
+    if (!saz) {
+      throw new NotFoundException(
+        `Sub-Administrative Zone with ID ${subAdministrativeZoneId} not found`,
+      );
+    }
+
+    const created: EnumerationArea[] = [];
+    const skippedItems: Array<{
+      areaCode: string;
+      subAdministrativeZoneIds: number[];
+      reason: string;
+    }> = [];
+    const errors: Array<{ feature: any; error: string }> = [];
+
+    for (const feature of features) {
+      try {
+        if (feature.type !== 'Feature') {
+          errors.push({
+            feature,
+            error: 'Invalid feature type. Must be a Feature.',
+          });
+          continue;
+        }
+
+        const { properties, geometry } = feature;
+
+        // Validate required properties (name, description, areaCode)
+        if (!properties.name || !properties.areaCode || !properties.description) {
+          errors.push({
+            feature,
+            error: 'Missing required properties: name, areaCode, or description',
+          });
+          continue;
+        }
+
+        // Check if EA already exists with the same areaCode AND subAdministrativeZoneId combination
+        const existingEA = await this.enumerationAreaRepository.findOne({
+          where: {
+            areaCode: properties.areaCode,
+          },
+          include: [
+            {
+              model: SubAdministrativeZone,
+              as: 'subAdministrativeZones',
+              where: {
+                id: subAdministrativeZoneId,
+              },
+              through: { attributes: [] },
+              required: true,
+            },
+          ],
+        });
+
+        if (existingEA) {
+          skippedItems.push({
+            areaCode: properties.areaCode,
+            subAdministrativeZoneIds: [subAdministrativeZoneId],
+            reason: 'Enumeration Area with this areaCode and SubAdministrativeZoneId combination already exists',
+          });
+          continue;
+        }
+
+        // Convert GeoJSON geometry to PostGIS format
+        const geomString = JSON.stringify(geometry);
+
+        // Create the enumeration area
+        const enumerationArea = await this.enumerationAreaRepository.create({
+          name: properties.name,
+          areaCode: properties.areaCode,
+          description: properties.description,
+          geom: Sequelize.fn('ST_GeomFromGeoJSON', geomString),
+        });
+
+        // Assign the subAdministrativeZoneId via junction table
+        await this.junctionRepository.create({
+          enumerationAreaId: enumerationArea.id,
+          subAdministrativeZoneId: subAdministrativeZoneId,
+        });
+
+        created.push(enumerationArea);
+      } catch (error) {
+        errors.push({
+          feature,
+          error: error.message,
+        });
+      }
+    }
+
+    return {
+      success: created.length,
+      skipped: skippedItems.length,
+      created,
+      skippedItems,
+      errors,
+    };
+  }
+
+  /**
    * Find all enumeration areas with optional associations
    * By default, only returns active EAs (isActive = true)
    * @param withGeom - Include geometry (default: false)
