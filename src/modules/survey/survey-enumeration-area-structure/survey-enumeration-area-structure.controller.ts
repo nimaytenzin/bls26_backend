@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Patch,
+  Put,
   Param,
   Delete,
   UseGuards,
@@ -96,13 +97,27 @@ export class SurveyEnumerationAreaStructureController {
   }
 
   /**
-   * Update a structure
+   * Update a structure (partial update)
    * @access Admin, Supervisor, Enumerator
    */
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ENUMERATOR)
   update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateDto: UpdateSurveyEnumerationAreaStructureDto,
+  ) {
+    return this.structureService.update(id, updateDto);
+  }
+
+  /**
+   * Update a structure (full update - same as PATCH)
+   * @access Admin, Supervisor, Enumerator
+   */
+  @Put(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ENUMERATOR)
+  updateWithPut(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateDto: UpdateSurveyEnumerationAreaStructureDto,
   ) {

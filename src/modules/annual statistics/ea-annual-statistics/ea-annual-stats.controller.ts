@@ -54,7 +54,6 @@ export class EAAnnualStatsController {
       subAdministrativeZoneId,
     );
   }
-
   /**
    * GET /ea-annual-stats/history/:enumerationAreaId
    * Get historical records for a specific Enumeration Area

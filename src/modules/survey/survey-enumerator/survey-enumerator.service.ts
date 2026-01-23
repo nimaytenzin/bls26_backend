@@ -501,7 +501,23 @@ export class SurveyEnumeratorService {
       '01,02', // Example Dzongkhag Codes (comma-separated, e.g., "01", "01,02", "01,02,03")
     ];
 
-    return `${headers.join(',')}\n${exampleRow.join(',')}`;
+    // Properly escape CSV values (wrap in quotes if contains comma, quote, or newline)
+    const escapeCsvValue = (value: string): string => {
+      if (value === null || value === undefined) {
+        return '';
+      }
+      const str = String(value);
+      // If value contains comma, quote, or newline, wrap in quotes and escape internal quotes
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const csvHeaders = headers.map(escapeCsvValue).join(',');
+    const csvRow = exampleRow.map(escapeCsvValue).join(',');
+
+    return `${csvHeaders}\n${csvRow}`;
   }
 
   /**

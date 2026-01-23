@@ -658,7 +658,10 @@ export class EAAnnualStatsService {
     const dzongkhagName = administrativeZone?.dzongkhag?.name || 'Unknown';
 
     // Fetch annual statistics for all EAs
-    const eaIds = enumerationAreas.map((ea) => ea.id);
+    const eaIds = enumerationAreas.map((ea) => {
+      // Ensure we get the EA ID correctly (handle both Sequelize model instances and plain objects)
+      return (ea as any).dataValues?.id || (ea as any).id || ea.get?.('id') || ea.id;
+    });
     const annualStats = await this.eaAnnualStatsRepository.findAll({
       where: {
         enumerationAreaId: { [Op.in]: eaIds },
@@ -680,10 +683,13 @@ export class EAAnnualStatsService {
 
     // Build GeoJSON features
     const features: EAStatsFeature[] = enumerationAreas.map((ea) => {
-      const stats = statsMap.get(ea.id);
+      // Ensure we get the EA ID correctly (handle both Sequelize model instances and plain objects)
+      const eaId = (ea as any).dataValues?.id || (ea as any).id || ea.get?.('id') || ea.id;
+      
+      const stats = statsMap.get(eaId);
       const hasData = !!stats;
 
-      const geomData = (ea as any).dataValues.geomGeoJSON;
+      const geomData = (ea as any).dataValues?.geomGeoJSON || (ea as any).geomGeoJSON;
       const geometry = geomData ? JSON.parse(geomData) : null;
 
       // Get SAZ info (use matching SAZ or first from junction table)
@@ -691,7 +697,7 @@ export class EAAnnualStatsService {
         (s: any) => s.id === subAdministrativeZoneId,
       );
       const subAdministrativeZoneIdFinal =
-        matchingSAZ?.id || ea.subAdministrativeZoneId || subAdministrativeZoneId;
+        matchingSAZ?.id || (ea as any).dataValues?.subAdministrativeZoneId || ea.subAdministrativeZoneId || subAdministrativeZoneId;
       const subAdministrativeZoneName =
         matchingSAZ?.name || sazName || null;
       const subAdministrativeZoneType =
@@ -714,11 +720,16 @@ export class EAAnnualStatsService {
       totalMale += male;
       totalFemale += female;
 
+      // Get EA properties correctly
+      const eaName = (ea as any).dataValues?.name || ea.name;
+      const eaAreaCode = (ea as any).dataValues?.areaCode || ea.areaCode;
+      const eaDescription = (ea as any).dataValues?.description || ea.description;
+
       const properties: EAStatsProperties = {
-        id: ea.id,
-        name: ea.name,
-        areaCode: ea.areaCode,
-        description: ea.description,
+        id: eaId,
+        name: eaName,
+        areaCode: eaAreaCode,
+        description: eaDescription,
         subAdministrativeZoneId: subAdministrativeZoneIdFinal,
         subAdministrativeZoneName: subAdministrativeZoneName,
         subAdministrativeZoneType: subAdministrativeZoneType,
@@ -744,7 +755,7 @@ export class EAAnnualStatsService {
 
       return {
         type: 'Feature',
-        id: ea.id,
+        id: eaId,
         geometry,
         properties,
       };

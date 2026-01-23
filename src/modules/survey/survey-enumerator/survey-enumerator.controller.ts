@@ -357,7 +357,7 @@ export class SurveyEnumeratorController {
     'Content-Disposition',
     'attachment; filename="enumerator_upload_template.csv"',
   )
-  async getCSVTemplate(@Res() res: Response) {
+  async getCSVTemplate(@Res() res: Response): Promise<void> {
     const template = await this.surveyEnumeratorService.generateCSVTemplate();
     res.send(template);
   }
