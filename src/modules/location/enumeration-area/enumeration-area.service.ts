@@ -14,7 +14,8 @@ import { SplitEnumerationAreaDto } from './dto/split-enumeration-area.dto';
 import { MergeEnumerationAreasDto } from './dto/merge-enumeration-areas.dto';
 import { EaLineageResponseDto, EaLineageNodeDto, EaOperationDto } from './dto/ea-lineage-response.dto';
 import { EaHistoryResponseDto, EaHistoryNodeDto } from './dto/ea-history-response.dto';
-import { Op } from 'sequelize';
+import { Op, QueryTypes } from 'sequelize';
+import * as ExcelJS from 'exceljs';
 import {
   PaginationUtil,
   PaginationQueryDto,
@@ -1712,6 +1713,364 @@ export class EnumerationAreaService {
     ).filter(Boolean) as EnumerationArea[];
 
     return PaginationUtil.createPaginatedResponse(orderedRows, totalItems, options);
+  }
+
+  /**
+   * Get all RBA enumeration areas, paginated
+   */
+  async findAllRbaPaginated(
+    query: PaginationQueryDto = {},
+  ): Promise<PaginatedResponse<EnumerationArea>> {
+    const options = PaginationUtil.normalizePaginationOptions(query);
+    const { offset, limit } = PaginationUtil.calculateOffsetLimit(options);
+    const order = PaginationUtil.buildOrderClause(options, 'id');
+
+    const { rows, count } = await this.enumerationAreaRepository.findAndCountAll({
+      where: { isRBA: true, isActive: true },
+      attributes: { exclude: ['geom'] },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',
+          through: { attributes: [] },
+          required: false,
+          attributes: { exclude: ['geom'] },
+          include: [
+            {
+              model: AdministrativeZone,
+              as: 'administrativeZone',
+              attributes: { exclude: ['geom'] },
+              include: [
+                {
+                  model: Dzongkhag,
+                  as: 'dzongkhag',
+                  attributes: { exclude: ['geom'] },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      offset,
+      limit,
+      order,
+    });
+
+    return PaginationUtil.createPaginatedResponse(rows, count, options);
+  }
+
+  /**
+   * Get all Urban RBA enumeration areas (EAs in Thromde), paginated
+   * Uses raw SQL for ID lookup to avoid Sequelize findAndCountAll + nested BelongsToMany SQL bug
+   */
+  async findAllUrbanRbaPaginated(
+    query: PaginationQueryDto = {},
+  ): Promise<PaginatedResponse<EnumerationArea>> {
+    const options = PaginationUtil.normalizePaginationOptions(query);
+    const { offset, limit } = PaginationUtil.calculateOffsetLimit(options);
+    const sortOrder = options.sortOrder === 'ASC' ? 'ASC' : 'DESC';
+    const sortBy = options.sortBy && ['id', 'name', 'areaCode'].includes(options.sortBy) ? options.sortBy : 'id';
+
+    // Subquery: DISTINCT ON (ea.id) so ORDER BY must start with ea.id; outer query orders by sort column (PostgreSQL: SELECT DISTINCT requires ORDER BY cols in select list)
+    const idRows = await this.enumerationAreaRepository.sequelize.query<{ id: number }>(
+      `SELECT id FROM (
+         SELECT DISTINCT ON (ea.id) ea.id, ea."${sortBy}" AS sort_col
+         FROM "EnumerationAreas" ea
+         INNER JOIN "EnumerationAreaSubAdministrativeZones" j ON j."enumerationAreaId" = ea.id
+         INNER JOIN "SubAdministrativeZones" saz ON saz.id = j."subAdministrativeZoneId"
+         INNER JOIN "AdministrativeZones" az ON az.id = saz."administrativeZoneId"
+         WHERE ea."isRBA" = true AND ea."isActive" = true AND az.type = 'Thromde'
+         ORDER BY ea.id, ea."${sortBy}" ${sortOrder}
+       ) sub
+       ORDER BY sort_col ${sortOrder}`,
+      { type: QueryTypes.SELECT },
+    );
+
+    const eaIds = (idRows as { id: number }[]).map(r => r.id);
+    const totalItems = eaIds.length;
+    const paginatedIds = eaIds.slice(offset, offset + limit);
+
+    if (paginatedIds.length === 0) {
+      return PaginationUtil.createPaginatedResponse([], totalItems, options);
+    }
+
+    const rows = await this.enumerationAreaRepository.findAll({
+      where: { id: { [Op.in]: paginatedIds } },
+      attributes: { exclude: ['geom'] },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',
+          through: { attributes: [] },
+          attributes: { exclude: ['geom'] },
+          required: false,
+          include: [
+            {
+              model: AdministrativeZone,
+              as: 'administrativeZone',
+              attributes: { exclude: ['geom'] },
+              include: [
+                {
+                  model: Dzongkhag,
+                  as: 'dzongkhag',
+                  attributes: { exclude: ['geom'] },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      order: PaginationUtil.buildOrderClause(options, 'id'),
+    });
+
+    const orderedRows = paginatedIds.map(id => rows.find(ea => ea.id === id)).filter(Boolean) as EnumerationArea[];
+    return PaginationUtil.createPaginatedResponse(orderedRows, totalItems, options);
+  }
+
+  /**
+   * Get all Rural RBA enumeration areas (EAs in Gewog), paginated
+   * Uses raw SQL for ID lookup to avoid Sequelize findAndCountAll + nested BelongsToMany SQL bug
+   */
+  async findAllRuralRbaPaginated(
+    query: PaginationQueryDto = {},
+  ): Promise<PaginatedResponse<EnumerationArea>> {
+    const options = PaginationUtil.normalizePaginationOptions(query);
+    const { offset, limit } = PaginationUtil.calculateOffsetLimit(options);
+    const sortOrder = options.sortOrder === 'ASC' ? 'ASC' : 'DESC';
+    const sortBy = options.sortBy && ['id', 'name', 'areaCode'].includes(options.sortBy) ? options.sortBy : 'id';
+
+    const idRows = await this.enumerationAreaRepository.sequelize.query<{ id: number }>(
+      `SELECT id FROM (
+         SELECT DISTINCT ON (ea.id) ea.id, ea."${sortBy}" AS sort_col
+         FROM "EnumerationAreas" ea
+         INNER JOIN "EnumerationAreaSubAdministrativeZones" j ON j."enumerationAreaId" = ea.id
+         INNER JOIN "SubAdministrativeZones" saz ON saz.id = j."subAdministrativeZoneId"
+         INNER JOIN "AdministrativeZones" az ON az.id = saz."administrativeZoneId"
+         WHERE ea."isRBA" = true AND ea."isActive" = true AND az.type = 'Gewog'
+         ORDER BY ea.id, ea."${sortBy}" ${sortOrder}
+       ) sub
+       ORDER BY sort_col ${sortOrder}`,
+      { type: QueryTypes.SELECT },
+    );
+
+    const eaIds = (idRows as { id: number }[]).map(r => r.id);
+    const totalItems = eaIds.length;
+    const paginatedIds = eaIds.slice(offset, offset + limit);
+
+    if (paginatedIds.length === 0) {
+      return PaginationUtil.createPaginatedResponse([], totalItems, options);
+    }
+
+    const rows = await this.enumerationAreaRepository.findAll({
+      where: { id: { [Op.in]: paginatedIds } },
+      attributes: { exclude: ['geom'] },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',
+          through: { attributes: [] },
+          attributes: { exclude: ['geom'] },
+          required: false,
+          include: [
+            {
+              model: AdministrativeZone,
+              as: 'administrativeZone',
+              attributes: { exclude: ['geom'] },
+              include: [
+                {
+                  model: Dzongkhag,
+                  as: 'dzongkhag',
+                  attributes: { exclude: ['geom'] },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      order: PaginationUtil.buildOrderClause(options, 'id'),
+    });
+
+    const orderedRows = paginatedIds.map(id => rows.find(ea => ea.id === id)).filter(Boolean) as EnumerationArea[];
+    return PaginationUtil.createPaginatedResponse(orderedRows, totalItems, options);
+  }
+
+  /**
+   * Mark an enumeration area as RBA
+   */
+  async markAsRba(id: number): Promise<EnumerationArea> {
+    const ea = await this.enumerationAreaRepository.findByPk(id);
+    if (!ea) {
+      throw new NotFoundException(`Enumeration area with ID ${id} not found`);
+    }
+    await this.enumerationAreaRepository.update(
+      { isRBA: true },
+      { where: { id } },
+    );
+    return this.findOne(id, false, true);
+  }
+
+  /**
+   * Unmark an enumeration area as RBA
+   */
+  async unmarkAsRba(id: number): Promise<EnumerationArea> {
+    const ea = await this.enumerationAreaRepository.findByPk(id);
+    if (!ea) {
+      throw new NotFoundException(`Enumeration area with ID ${id} not found`);
+    }
+    await this.enumerationAreaRepository.update(
+      { isRBA: false },
+      { where: { id } },
+    );
+    return this.findOne(id, false, true);
+  }
+
+  private rbaInclude() {
+    return [
+      {
+        model: SubAdministrativeZone,
+        as: 'subAdministrativeZones',
+        through: { attributes: [] },
+        attributes: { exclude: ['geom'] },
+        required: false,
+        include: [
+          {
+            model: AdministrativeZone,
+            as: 'administrativeZone',
+            attributes: { exclude: ['geom'] },
+            include: [
+              {
+                model: Dzongkhag,
+                as: 'dzongkhag',
+                attributes: { exclude: ['geom'] },
+              },
+            ],
+          },
+        ],
+      },
+    ];
+  }
+
+  /** Get all RBA EAs (no pagination) for Excel export */
+  async findAllRbaForExcel(): Promise<EnumerationArea[]> {
+    return this.enumerationAreaRepository.findAll({
+      where: { isRBA: true, isActive: true },
+      attributes: { exclude: ['geom'] },
+      include: this.rbaInclude(),
+      order: [['id', 'ASC']],
+    });
+  }
+
+  /** Get all Urban RBA EAs for Excel export */
+  async findAllUrbanRbaForExcel(): Promise<EnumerationArea[]> {
+    const idRows = await this.enumerationAreaRepository.sequelize.query<{ id: number }>(
+      `SELECT ea.id FROM "EnumerationAreas" ea
+       INNER JOIN "EnumerationAreaSubAdministrativeZones" j ON j."enumerationAreaId" = ea.id
+       INNER JOIN "SubAdministrativeZones" saz ON saz.id = j."subAdministrativeZoneId"
+       INNER JOIN "AdministrativeZones" az ON az.id = saz."administrativeZoneId"
+       WHERE ea."isRBA" = true AND ea."isActive" = true AND az.type = 'Thromde'
+       GROUP BY ea.id ORDER BY ea.id`,
+      { type: QueryTypes.SELECT },
+    );
+    const ids = (idRows as { id: number }[]).map(r => r.id);
+    if (ids.length === 0) return [];
+    return this.enumerationAreaRepository.findAll({
+      where: { id: { [Op.in]: ids } },
+      attributes: { exclude: ['geom'] },
+      include: this.rbaInclude(),
+      order: [['id', 'ASC']],
+    });
+  }
+
+  /** Get all Rural RBA EAs for Excel export */
+  async findAllRuralRbaForExcel(): Promise<EnumerationArea[]> {
+    const idRows = await this.enumerationAreaRepository.sequelize.query<{ id: number }>(
+      `SELECT ea.id FROM "EnumerationAreas" ea
+       INNER JOIN "EnumerationAreaSubAdministrativeZones" j ON j."enumerationAreaId" = ea.id
+       INNER JOIN "SubAdministrativeZones" saz ON saz.id = j."subAdministrativeZoneId"
+       INNER JOIN "AdministrativeZones" az ON az.id = saz."administrativeZoneId"
+       WHERE ea."isRBA" = true AND ea."isActive" = true AND az.type = 'Gewog'
+       GROUP BY ea.id ORDER BY ea.id`,
+      { type: QueryTypes.SELECT },
+    );
+    const ids = (idRows as { id: number }[]).map(r => r.id);
+    if (ids.length === 0) return [];
+    return this.enumerationAreaRepository.findAll({
+      where: { id: { [Op.in]: ids } },
+      attributes: { exclude: ['geom'] },
+      include: this.rbaInclude(),
+      order: [['id', 'ASC']],
+    });
+  }
+
+  private async buildRbaExcelBuffer(eas: EnumerationArea[], sheetName: string): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(sheetName, { pageSetup: { fitToPage: true } });
+
+    // Headers aligned with PrimeNG p-table: Dzongkhag, Dzongkhag Code, Thromde/Gewog, Thromde/Gewog Code, LAP/Chiwog, LAP/Chiwog Code, EA Code, Description
+    worksheet.columns = [
+      { header: 'Dzongkhag', key: 'dzongkhag', width: 20 },
+      { header: 'Dzongkhag Code', key: 'dzongkhagCode', width: 14 },
+      { header: 'Thromde/Gewog', key: 'thromdeGewog', width: 22 },
+      { header: 'Thromde/Gewog Code', key: 'thromdeGewogCode', width: 18 },
+      { header: 'LAP/Chiwog', key: 'lapChiwog', width: 22 },
+      { header: 'LAP/Chiwog Code', key: 'lapChiwogCode', width: 14 },
+      { header: 'EA Code', key: 'eaCode', width: 14 },
+      { header: 'Description', key: 'description', width: 36 },
+    ];
+
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+    for (const ea of eas) {
+      const sazs = (ea as any).subAdministrativeZones || [];
+      if (sazs.length === 0) {
+        worksheet.addRow({
+          dzongkhag: '',
+          dzongkhagCode: '',
+          thromdeGewog: '',
+          thromdeGewogCode: '',
+          lapChiwog: '',
+          lapChiwogCode: '',
+          eaCode: ea.areaCode,
+          description: ea.description || '',
+        });
+      } else {
+        for (const saz of sazs) {
+          const az = (saz as any).administrativeZone;
+          const dz = az?.dzongkhag;
+          worksheet.addRow({
+            dzongkhag: dz?.name || '',
+            dzongkhagCode: dz?.areaCode || '',
+            thromdeGewog: az?.name || '',
+            thromdeGewogCode: az?.areaCode || '',
+            lapChiwog: saz.name || '',
+            lapChiwogCode: saz.areaCode || '',
+            eaCode: ea.areaCode,
+            description: ea.description || '',
+          });
+        }
+      }
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  }
+
+  async getRbaExcelBuffer(): Promise<Buffer> {
+    const eas = await this.findAllRbaForExcel();
+    return this.buildRbaExcelBuffer(eas, 'All RBA EAs');
+  }
+
+  async getUrbanRbaExcelBuffer(): Promise<Buffer> {
+    const eas = await this.findAllUrbanRbaForExcel();
+    return this.buildRbaExcelBuffer(eas, 'Urban RBA EAs');
+  }
+
+  async getRuralRbaExcelBuffer(): Promise<Buffer> {
+    const eas = await this.findAllRuralRbaForExcel();
+    return this.buildRbaExcelBuffer(eas, 'Rural RBA EAs');
   }
 
 }

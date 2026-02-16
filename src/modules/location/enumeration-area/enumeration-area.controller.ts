@@ -16,7 +16,10 @@ import {
   BadRequestException,
   NotFoundException,
   ParseIntPipe,
+  Header,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { EnumerationAreaService } from './enumeration-area.service';
 import { CreateEnumerationAreaDto } from './dto/create-enumeration-area.dto';
@@ -935,6 +938,144 @@ export class EnumerationAreaController {
       sortOrder,
     };
     return this.enumerationAreaService.findAllMergedPaginated(query);
+  }
+
+  /**
+   * Get all RBA enumeration areas, paginated
+   * @access Admin
+   * @query page, limit, sortBy, sortOrder
+   */
+  @Get('rba/paginated/all')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async findAllRba(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'ASC' | 'DESC',
+  ) {
+    const query: PaginationQueryDto = {
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      sortBy,
+      sortOrder,
+    };
+    return this.enumerationAreaService.findAllRbaPaginated(query);
+  }
+
+  /**
+   * Get all Urban RBA enumeration areas (Thromde), paginated
+   * @access Admin
+   * @query page, limit, sortBy, sortOrder
+   */
+  @Get('rba/urban/paginated/all')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async findAllUrbanRba(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'ASC' | 'DESC',
+  ) {
+    const query: PaginationQueryDto = {
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      sortBy,
+      sortOrder,
+    };
+    return this.enumerationAreaService.findAllUrbanRbaPaginated(query);
+  }
+
+  /**
+   * Get all Rural RBA enumeration areas (Gewog), paginated
+   * @access Admin
+   * @query page, limit, sortBy, sortOrder
+   */
+  @Get('rba/rural/paginated/all')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async findAllRuralRba(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'ASC' | 'DESC',
+  ) {
+    const query: PaginationQueryDto = {
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      sortBy,
+      sortOrder,
+    };
+    return this.enumerationAreaService.findAllRuralRbaPaginated(query);
+  }
+
+  /**
+   * Download all RBA enumeration areas as Excel
+   * @access Admin
+   */
+  @Get('rba/excel')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  async downloadRbaExcel(@Res() res: Response) {
+    const buffer = await this.enumerationAreaService.getRbaExcelBuffer();
+    const filename = `rba-enumeration-areas-${Date.now()}.xlsx`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  }
+
+  /**
+   * Download Urban RBA enumeration areas as Excel
+   * @access Admin
+   */
+  @Get('rba/urban/excel')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  async downloadUrbanRbaExcel(@Res() res: Response) {
+    const buffer = await this.enumerationAreaService.getUrbanRbaExcelBuffer();
+    const filename = `rba-urban-enumeration-areas-${Date.now()}.xlsx`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  }
+
+  /**
+   * Download Rural RBA enumeration areas as Excel
+   * @access Admin
+   */
+  @Get('rba/rural/excel')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  async downloadRuralRbaExcel(@Res() res: Response) {
+    const buffer = await this.enumerationAreaService.getRuralRbaExcelBuffer();
+    const filename = `rba-rural-enumeration-areas-${Date.now()}.xlsx`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  }
+
+  /**
+   * Mark enumeration area as RBA
+   * @access Admin
+   */
+  @Patch(':id/mark-rba')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async markAsRba(@Param('id', ParseIntPipe) id: number) {
+    return this.enumerationAreaService.markAsRba(id);
+  }
+
+  /**
+   * Unmark enumeration area as RBA
+   * @access Admin
+   */
+  @Patch(':id/unmark-rba')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async unmarkAsRba(@Param('id', ParseIntPipe) id: number) {
+    return this.enumerationAreaService.unmarkAsRba(id);
   }
 
   /**

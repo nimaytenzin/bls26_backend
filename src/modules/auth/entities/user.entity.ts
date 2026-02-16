@@ -12,6 +12,7 @@ export enum UserRole {
   ADMIN = 'ADMIN',
   SUPERVISOR = 'SUPERVISOR',
   ENUMERATOR = 'ENUMERATOR',
+  GENERAL_USER='GENERAL_USER',
 }
 
 @Table

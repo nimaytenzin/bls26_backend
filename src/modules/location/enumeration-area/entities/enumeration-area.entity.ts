@@ -75,6 +75,13 @@ export class EnumerationArea extends Model {
   })
   deactivatedReason: string;
 
+  @Column({
+    type: DataType.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  })
+  isRBA: boolean;
+
   @BelongsToMany(
     () => SubAdministrativeZone,
     () => EnumerationAreaSubAdministrativeZone,

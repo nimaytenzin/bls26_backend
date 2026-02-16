@@ -26,6 +26,8 @@ import { AnnualStatisticsDownloadModule } from './modules/annual statistics/annu
 import { PublicPageSettingsModule } from './modules/public-page-settings/public-page-settings.module';
 import { EnumerationAreaSubAdministrativeZone } from './modules/location/enumeration-area/entities/enumeration-area-sub-administrative-zone.entity';
 import { EnumerationAreaLineage } from './modules/location/enumeration-area/entities/enumeration-area-lineage.entity';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 
 @Module({
   imports: [
@@ -55,6 +57,10 @@ import { EnumerationAreaLineage } from './modules/location/enumeration-area/enti
     PublicPageSettingsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, {
+    provide: APP_GUARD,
+    useClass: JwtAuthGuard,
+  },],
+
 })
 export class AppModule {}
