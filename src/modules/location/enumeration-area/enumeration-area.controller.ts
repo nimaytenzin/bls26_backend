@@ -27,6 +27,7 @@ import { CreateEnumerationAreaGeoJsonDto } from './dto/create-enumeration-area-g
 import { UpdateEnumerationAreaDto } from './dto/update-enumeration-area.dto';
 import { SplitEnumerationAreaDto } from './dto/split-enumeration-area.dto';
 import { MergeEnumerationAreasDto } from './dto/merge-enumeration-areas.dto';
+import { MarkRbaByCodesDto } from './dto/mark-rba-by-codes.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -1052,6 +1053,24 @@ export class EnumerationAreaController {
     const filename = `rba-rural-enumeration-areas-${Date.now()}.xlsx`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
+  }
+
+  /**
+   * Mark enumeration area as RBA by geographic codes (Dzongkhag, Administrative Zone, Sub Administrative Zone, EA code).
+   * @access Admin
+   * @body dzongkhagCode, administrativeZoneCode, subAdministrativeZoneCode, eaCode (e.g. "2", "61", "4", "1")
+   */
+  @Patch('rba/mark-by-codes')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async markAsRbaByCodes(@Body() dto: MarkRbaByCodesDto) {
+    return this.enumerationAreaService.markAsRbaByGeoCodes(
+      dto.dzongkhagCode,
+      dto.administrativeZoneCode,
+      dto.subAdministrativeZoneCode,
+      dto.eaCode,
+    );
   }
 
   /**

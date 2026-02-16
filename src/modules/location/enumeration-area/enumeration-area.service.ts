@@ -1924,6 +1924,58 @@ export class EnumerationAreaService {
     return this.findOne(id, false, true);
   }
 
+  /**
+   * Mark an enumeration area as RBA by geographic codes (Dzongkhag, Administrative Zone, Sub Administrative Zone, EA code).
+   */
+  async markAsRbaByGeoCodes(
+    dzongkhagCode: string,
+    administrativeZoneCode: string,
+    subAdministrativeZoneCode: string,
+    eaCode: string,
+  ): Promise<EnumerationArea> {
+    const ea = await this.enumerationAreaRepository.findOne({
+      where: { areaCode: eaCode, isActive: true },
+      include: [
+        {
+          model: SubAdministrativeZone,
+          as: 'subAdministrativeZones',
+          through: { attributes: [] },
+          attributes: [],
+          required: true,
+          where: { areaCode: subAdministrativeZoneCode },
+          include: [
+            {
+              model: AdministrativeZone,
+              as: 'administrativeZone',
+              attributes: [],
+              required: true,
+              where: { areaCode: administrativeZoneCode },
+              include: [
+                {
+                  model: Dzongkhag,
+                  as: 'dzongkhag',
+                  attributes: [],
+                  required: true,
+                  where: { areaCode: dzongkhagCode },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    if (!ea) {
+      throw new NotFoundException(
+        `Enumeration area not found for the given codes (Dzongkhag: ${dzongkhagCode}, Administrative Zone: ${administrativeZoneCode}, Sub Administrative Zone: ${subAdministrativeZoneCode}, EA: ${eaCode})`,
+      );
+    }
+    await this.enumerationAreaRepository.update(
+      { isRBA: true },
+      { where: { id: ea.id } },
+    );
+    return this.findOne(ea.id, false, true);
+  }
+
   private rbaInclude() {
     return [
       {
