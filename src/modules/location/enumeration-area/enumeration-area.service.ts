@@ -1933,47 +1933,40 @@ export class EnumerationAreaService {
     subAdministrativeZoneCode: string,
     eaCode: string,
   ): Promise<EnumerationArea> {
-    const ea = await this.enumerationAreaRepository.findOne({
-      where: { areaCode: eaCode, isActive: true },
-      include: [
-        {
-          model: SubAdministrativeZone,
-          as: 'subAdministrativeZones',
-          through: { attributes: [] },
-          attributes: [],
-          required: true,
-          where: { areaCode: subAdministrativeZoneCode },
-          include: [
-            {
-              model: AdministrativeZone,
-              as: 'administrativeZone',
-              attributes: [],
-              required: true,
-              where: { areaCode: administrativeZoneCode },
-              include: [
-                {
-                  model: Dzongkhag,
-                  as: 'dzongkhag',
-                  attributes: [],
-                  required: true,
-                  where: { areaCode: dzongkhagCode },
-                },
-              ],
-            },
-          ],
+    const rows = await this.enumerationAreaRepository.sequelize.query<{ id: number }>(
+      `SELECT ea.id
+       FROM "EnumerationAreas" ea
+       INNER JOIN "EnumerationAreaSubAdministrativeZones" j ON j."enumerationAreaId" = ea.id
+       INNER JOIN "SubAdministrativeZones" saz ON saz.id = j."subAdministrativeZoneId"
+       INNER JOIN "AdministrativeZones" az ON az.id = saz."administrativeZoneId"
+       INNER JOIN "Dzongkhags" dz ON dz.id = az."dzongkhagId"
+       WHERE dz."areaCode" = :dzongkhagCode
+         AND az."areaCode" = :administrativeZoneCode
+         AND saz."areaCode" = :subAdministrativeZoneCode
+         AND ea."areaCode" = :eaCode
+         AND ea."isActive" = true
+       LIMIT 1`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: {
+          dzongkhagCode,
+          administrativeZoneCode,
+          subAdministrativeZoneCode,
+          eaCode,
         },
-      ],
-    });
-    if (!ea) {
+      },
+    );
+    const eaId = rows?.[0]?.id;
+    if (eaId == null) {
       throw new NotFoundException(
         `Enumeration area not found for the given codes (Dzongkhag: ${dzongkhagCode}, Administrative Zone: ${administrativeZoneCode}, Sub Administrative Zone: ${subAdministrativeZoneCode}, EA: ${eaCode})`,
       );
     }
     await this.enumerationAreaRepository.update(
       { isRBA: true },
-      { where: { id: ea.id } },
+      { where: { id: eaId } },
     );
-    return this.findOne(ea.id, false, true);
+    return this.findOne(eaId, false, true);
   }
 
   private rbaInclude() {
