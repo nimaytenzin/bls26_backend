@@ -17,6 +17,9 @@ import { SurveyEnumerator } from '../survey-enumerator/entities/survey-enumerato
 import { SurveyEnumerationAreaHouseholdListing } from '../survey-enumeration-area-household-listing/entities/survey-enumeration-area-household-listing.entity';
 import { SurveyEnumerationAreaHouseholdListingService } from '../survey-enumeration-area-household-listing/survey-enumeration-area-household-listing.service';
 import { SurveyEnumerationAreaStructure } from '../survey-enumeration-area-structure/entities/survey-enumeration-area-structure.entity';
+import { SurveyEnumerationAreaSampling } from '../../sampling/entities/survey-enumeration-area-sampling.entity';
+import { SurveyEnumerationAreaHouseholdSample } from '../../sampling/entities/survey-enumeration-area-household-sample.entity';
+import { SurveySamplingConfig } from '../../sampling/entities/survey-sampling-config.entity';
 import { BulkHouseholdUploadDto } from './dto/bulk-household-upload.dto';
 import { BulkHouseholdUploadResponseDto } from './dto/bulk-household-upload-response.dto';
 import {
@@ -40,6 +43,12 @@ export class SurveyService {
     private readonly householdListingRepository: typeof SurveyEnumerationAreaHouseholdListing,
     @Inject('SURVEY_ENUMERATION_AREA_STRUCTURE_REPOSITORY')
     private readonly structureRepository: typeof SurveyEnumerationAreaStructure,
+    @Inject('SURVEY_EA_SAMPLING_REPOSITORY')
+    private readonly samplingRepository: typeof SurveyEnumerationAreaSampling,
+    @Inject('SURVEY_EA_HOUSEHOLD_SAMPLE_REPOSITORY')
+    private readonly householdSampleRepository: typeof SurveyEnumerationAreaHouseholdSample,
+    @Inject('SURVEY_SAMPLING_CONFIG_REPOSITORY')
+    private readonly samplingConfigRepository: typeof SurveySamplingConfig,
     @Inject('DZONGKHAG_REPOSITORY')
     private readonly dzongkhagRepository: typeof Dzongkhag,
     private readonly householdListingService: SurveyEnumerationAreaHouseholdListingService,
@@ -270,28 +279,52 @@ export class SurveyService {
     const surveyEAIds = surveyEAs.map((sea) => sea.id);
 
     if (surveyEAIds.length > 0) {
-      // 2. Delete household listings (references surveyEnumerationAreaId)
+      // 2. Get household listing IDs for these survey EAs
+      const listings = await this.householdListingRepository.findAll({
+        where: { surveyEnumerationAreaId: { [Op.in]: surveyEAIds } },
+        attributes: ['id'],
+      });
+      const householdListingIds = listings.map((l) => l.id);
+
+      if (householdListingIds.length > 0) {
+        // 3. Delete household samples first (references householdListingId)
+        await this.householdSampleRepository.destroy({
+          where: { householdListingId: { [Op.in]: householdListingIds } },
+        });
+      }
+
+      // 4. Delete household listings (references surveyEnumerationAreaId)
       await this.householdListingRepository.destroy({
         where: { surveyEnumerationAreaId: { [Op.in]: surveyEAIds } },
       });
 
-      // 3. Delete structures (references surveyEnumerationAreaId)
+      // 5. Delete structures (references surveyEnumerationAreaId)
       await this.structureRepository.destroy({
+        where: { surveyEnumerationAreaId: { [Op.in]: surveyEAIds } },
+      });
+
+      // 6. Delete EA samplings (references surveyEnumerationAreaId)
+      await this.samplingRepository.destroy({
         where: { surveyEnumerationAreaId: { [Op.in]: surveyEAIds } },
       });
     }
 
-    // 4. Delete survey enumerator assignments
+    // 7. Delete survey enumerator assignments
     await this.surveyEnumeratorRepository.destroy({
       where: { surveyId: id },
     });
 
-    // 5. Delete survey enumeration areas
+    // 8. Delete survey enumeration areas
     await this.surveyEnumerationAreaRepository.destroy({
       where: { surveyId: id },
     });
 
-    // 6. Delete the survey
+    // 9. Delete survey sampling config (references surveyId)
+    await this.samplingConfigRepository.destroy({
+      where: { surveyId: id },
+    });
+
+    // 10. Delete the survey
     return await this.surveyRepository.destroy({
       where: { id },
     });
