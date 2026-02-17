@@ -545,17 +545,6 @@ export class EnumerationAreaController {
     );
   }
 
-  @Patch(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  async update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateEnumerationAreaDto: UpdateEnumerationAreaDto,
-  ) {
-    return this.enumerationAreaService.update(id, updateEnumerationAreaDto);
-  }
-
-
   /**
    * Update an enumeration area using geographic codes (Dzongkhag, Administrative Zone, Sub Administrative Zone, EA code).
    * This is safer when EA areaCode is only unique within a geographic hierarchy.
@@ -593,6 +582,16 @@ export class EnumerationAreaController {
       eaCode,
       updatePayload,
     );
+  }
+
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateEnumerationAreaDto: UpdateEnumerationAreaDto,
+  ) {
+    return this.enumerationAreaService.update(id, updateEnumerationAreaDto);
   }
 
   @Delete(':id')
