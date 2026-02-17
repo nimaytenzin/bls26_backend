@@ -729,6 +729,7 @@ export class EnumerationAreaService {
     return this.findOne(id);
   }
 
+  
   async updateGeometry(id: number, geometry: any): Promise<EnumerationArea> {
     // First check if the enumeration area exists
     const enumerationArea = await this.enumerationAreaRepository.findByPk(id);
@@ -1967,6 +1968,62 @@ export class EnumerationAreaService {
       { where: { id: eaId } },
     );
     return this.findOne(eaId, false, true);
+  }
+
+  /**
+   * Update an EA by geographic codes (Dzongkhag, Administrative Zone, Sub Administrative Zone, EA code).
+   * Uses the same geo-code resolution logic as markAsRbaByGeoCodes, but applies a generic update payload.
+   */
+  async updateByGeoCodes(
+    dzongkhagCode: string,
+    administrativeZoneCode: string,
+    subAdministrativeZoneCode: string,
+    eaCode: string,
+    updateEnumerationAreaDto: UpdateEnumerationAreaDto,
+  ): Promise<EnumerationArea> {
+    const rows = await this.enumerationAreaRepository.sequelize.query<{ id: number }>(
+      `SELECT ea.id
+       FROM "EnumerationAreas" ea
+       INNER JOIN "EnumerationAreaSubAdministrativeZones" j ON j."enumerationAreaId" = ea.id
+       INNER JOIN "SubAdministrativeZones" saz ON saz.id = j."subAdministrativeZoneId"
+       INNER JOIN "AdministrativeZones" az ON az.id = saz."administrativeZoneId"
+       INNER JOIN "Dzongkhags" dz ON dz.id = az."dzongkhagId"
+       WHERE dz."areaCode" = :dzongkhagCode
+         AND az."areaCode" = :administrativeZoneCode
+         AND saz."areaCode" = :subAdministrativeZoneCode
+         AND ea."areaCode" = :eaCode
+         AND ea."isActive" = true
+       LIMIT 1`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: {
+          dzongkhagCode,
+          administrativeZoneCode,
+          subAdministrativeZoneCode,
+          eaCode,
+        },
+      },
+    );
+
+    const eaId = rows?.[0]?.id;
+    if (eaId == null) {
+      throw new NotFoundException(
+        `Enumeration area not found for the given codes (Dzongkhag: ${dzongkhagCode}, Administrative Zone: ${administrativeZoneCode}, Sub Administrative Zone: ${subAdministrativeZoneCode}, EA: ${eaCode})`,
+      );
+    }
+
+    const [numRows] = await this.enumerationAreaRepository.update(
+      instanceToPlain(updateEnumerationAreaDto),
+      { where: { id: eaId } },
+    );
+
+    if (numRows === 0) {
+      throw new Error(
+        `Failed to update enumeration area for codes Dzongkhag: ${dzongkhagCode}, Administrative Zone: ${administrativeZoneCode}, Sub Administrative Zone: ${subAdministrativeZoneCode}, EA: ${eaCode}`,
+      );
+    }
+
+    return this.findOne(eaId);
   }
 
   private rbaInclude() {

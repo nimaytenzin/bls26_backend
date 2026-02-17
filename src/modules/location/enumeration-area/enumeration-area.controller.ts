@@ -27,7 +27,7 @@ import { CreateEnumerationAreaGeoJsonDto } from './dto/create-enumeration-area-g
 import { UpdateEnumerationAreaDto } from './dto/update-enumeration-area.dto';
 import { SplitEnumerationAreaDto } from './dto/split-enumeration-area.dto';
 import { MergeEnumerationAreasDto } from './dto/merge-enumeration-areas.dto';
-import { MarkRbaByCodesDto } from './dto/mark-rba-by-codes.dto';
+import { MarkRbaByCodesDto, UpdateEaByCodesDto } from './dto/mark-rba-by-codes.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -553,6 +553,46 @@ export class EnumerationAreaController {
     @Body() updateEnumerationAreaDto: UpdateEnumerationAreaDto,
   ) {
     return this.enumerationAreaService.update(id, updateEnumerationAreaDto);
+  }
+
+
+  /**
+   * Update an enumeration area using geographic codes (Dzongkhag, Administrative Zone, Sub Administrative Zone, EA code).
+   * This is safer when EA areaCode is only unique within a geographic hierarchy.
+   *
+   * @access Admin
+   *
+   * @example
+   * PATCH /enumeration-area/by-codes
+   * {
+   *   "dzongkhagCode": "2",
+   *   "administrativeZoneCode": "61",
+   *   "subAdministrativeZoneCode": "4",
+   *   "eaCode": "1",
+   *   "name": "Updated EA name",
+   *   "description": "Updated description",
+   *   "isActive": true
+   * }
+   */
+  @Patch('by-codes')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async updateByGeoCodes(@Body() dto: UpdateEaByCodesDto) {
+    const {
+      dzongkhagCode,
+      administrativeZoneCode,
+      subAdministrativeZoneCode,
+      eaCode,
+      ...updatePayload
+    } = dto;
+
+    return this.enumerationAreaService.updateByGeoCodes(
+      dzongkhagCode,
+      administrativeZoneCode,
+      subAdministrativeZoneCode,
+      eaCode,
+      updatePayload,
+    );
   }
 
   @Delete(':id')
