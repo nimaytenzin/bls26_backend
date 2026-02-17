@@ -112,6 +112,31 @@ export class SurveyEnumeratorController {
   }
 
   /**
+   * Generate CSV template for bulk upload of enumerators
+   * Template includes: Name, CID, Email Address, Phone Number, Password, Dzongkhag Codes
+   * Supports comma-separated dzongkhag codes for multiple assignments
+   *
+   * @returns CSV template file
+   *
+   * @example Template format
+   * Name,CID,Email Address,Phone Number,Password,Dzongkhag Codes
+   * Nima Yoezer,12345678901,nima.yoezer@example.com,17123456,,01,02
+   *
+   * @access Admin, Supervisor
+   */
+  @Get('template/csv')
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="enumerator_upload_template.csv"',
+  )
+  async getCSVTemplate(@Res() res: Response): Promise<void> {
+    const template = await this.surveyEnumeratorService.generateCSVTemplate();
+    res.send(template);
+  }
+
+  /**
    * Get all enumerator assignments for a user-survey combination
    * Returns all dzongkhag assignments for the specified enumerator and survey
    * 
@@ -335,31 +360,6 @@ export class SurveyEnumeratorController {
     @Body() body: { userIds: number[] },
   ) {
     return this.surveyEnumeratorService.removeMultiple(surveyId, body.userIds);
-  }
-
-  /**
-   * Generate CSV template for bulk upload of enumerators
-   * Template includes: Name, CID, Email Address, Phone Number, Password, Dzongkhag Codes
-   * Supports comma-separated dzongkhag codes for multiple assignments
-   * 
-   * @returns CSV template file
-   * 
-   * @example Template format
-   * Name,CID,Email Address,Phone Number,Password,Dzongkhag Codes
-   * Nima Yoezer,12345678901,nima.yoezer@example.com,17123456,,01,02
-   * 
-   * @access Admin, Supervisor
-   */
-  @Get('template/csv')
-  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
-  @Header('Content-Type', 'text/csv')
-  @Header(
-    'Content-Disposition',
-    'attachment; filename="enumerator_upload_template.csv"',
-  )
-  async getCSVTemplate(@Res() res: Response): Promise<void> {
-    const template = await this.surveyEnumeratorService.generateCSVTemplate();
-    res.send(template);
   }
 
   /**
