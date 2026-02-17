@@ -262,12 +262,36 @@ export class SurveyService {
   }
 
   async remove(id: number): Promise<number> {
-    // Delete associated enumeration areas first
+    // 1. Get survey enumeration area IDs for this survey
+    const surveyEAs = await this.surveyEnumerationAreaRepository.findAll({
+      where: { surveyId: id },
+      attributes: ['id'],
+    });
+    const surveyEAIds = surveyEAs.map((sea) => sea.id);
+
+    if (surveyEAIds.length > 0) {
+      // 2. Delete household listings (references surveyEnumerationAreaId)
+      await this.householdListingRepository.destroy({
+        where: { surveyEnumerationAreaId: { [Op.in]: surveyEAIds } },
+      });
+
+      // 3. Delete structures (references surveyEnumerationAreaId)
+      await this.structureRepository.destroy({
+        where: { surveyEnumerationAreaId: { [Op.in]: surveyEAIds } },
+      });
+    }
+
+    // 4. Delete survey enumerator assignments
+    await this.surveyEnumeratorRepository.destroy({
+      where: { surveyId: id },
+    });
+
+    // 5. Delete survey enumeration areas
     await this.surveyEnumerationAreaRepository.destroy({
       where: { surveyId: id },
     });
 
-    // Delete the survey
+    // 6. Delete the survey
     return await this.surveyRepository.destroy({
       where: { id },
     });
