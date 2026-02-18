@@ -32,6 +32,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { SurveyEnumerationAreaHouseholdSample } from '../../sampling/entities/survey-enumeration-area-household-sample.entity';
 import { SurveyEnumerationAreaSampling } from '../../sampling/entities/survey-enumeration-area-sampling.entity';
 import { Op } from 'sequelize';
+import type { Transaction } from 'sequelize';
 
 @Injectable()
 export class SurveyEnumerationAreaHouseholdListingService {
@@ -610,11 +611,13 @@ export class SurveyEnumerationAreaHouseholdListingService {
    * @param surveyEnumerationAreaId - Survey Enumeration Area ID
    * @param dto - DTO containing count and optional remarks
    * @param userId - User ID creating the entries
+   * @param transaction - Optional Sequelize transaction (for rollback on failure)
    */
   async createBlankHouseholdListings(
     surveyEnumerationAreaId: number,
     dto: CreateBlankHouseholdListingsDto,
     userId: number,
+    transaction?: Transaction,
   ): Promise<{
     success: boolean;
     message: string;
@@ -626,6 +629,7 @@ export class SurveyEnumerationAreaHouseholdListingService {
       surveyEnumerationAreaId,
       {
         attributes: ['id', 'surveyId', 'enumerationAreaId'],
+        transaction,
       },
     );
 
@@ -648,12 +652,15 @@ export class SurveyEnumerationAreaHouseholdListingService {
       const structureNumber = `STR-${structureCounter.toString().padStart(4, '0')}`;
       
       // Create structure first
-      const structure = await this.structureRepository.create({
-        surveyEnumerationAreaId,
-        structureNumber,
-        latitude: null,
-        longitude: null,
-      } as any);
+      const structure = await this.structureRepository.create(
+        {
+          surveyEnumerationAreaId,
+          structureNumber,
+          latitude: null,
+          longitude: null,
+        } as any,
+        { transaction },
+      );
 
       // Get the maximum household serial number for this structure (should be 0 for new structure)
       const existingListings = await this.householdListingRepository.findAll({
@@ -664,6 +671,7 @@ export class SurveyEnumerationAreaHouseholdListingService {
         attributes: ['householdSerialNumber'],
         order: [['householdSerialNumber', 'DESC']],
         limit: 1,
+        transaction,
       });
 
       // Determine next serial number for this structure (starts from 1 for each structure)
@@ -673,18 +681,21 @@ export class SurveyEnumerationAreaHouseholdListingService {
           : 1;
 
       // Create household listing linked to structure
-      const listing = await this.householdListingRepository.create({
-        surveyEnumerationAreaId,
-        structureId: structure.id,
-        householdIdentification: `HH-${structureCounter.toString().padStart(4, '0')}`,
-        householdSerialNumber: householdSerialNumber,
-        nameOfHOH: 'Not Available',
-        totalMale: 0,
-        totalFemale: 0,
-        phoneNumber: null,
-        remarks: defaultRemarks,
-        submittedBy: userId,
-      } as any);
+      const listing = await this.householdListingRepository.create(
+        {
+          surveyEnumerationAreaId,
+          structureId: structure.id,
+          householdIdentification: `HH-${structureCounter.toString().padStart(4, '0')}`,
+          householdSerialNumber: householdSerialNumber,
+          nameOfHOH: 'Not Available',
+          totalMale: 0,
+          totalFemale: 0,
+          phoneNumber: null,
+          remarks: defaultRemarks,
+          submittedBy: userId,
+        } as any,
+        { transaction },
+      );
 
       created.push(listing);
     }

@@ -22,6 +22,7 @@ import {
 import { Response } from 'express';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { EnumerationAreaService } from './enumeration-area.service';
+import { SurveyService } from '../../survey/survey/survey.service';
 import { CreateEnumerationAreaDto } from './dto/create-enumeration-area.dto';
 import { CreateEnumerationAreaGeoJsonDto } from './dto/create-enumeration-area-geojson.dto';
 import { UpdateEnumerationAreaDto } from './dto/update-enumeration-area.dto';
@@ -40,6 +41,7 @@ import {
 export class EnumerationAreaController {
   constructor(
     private readonly enumerationAreaService: EnumerationAreaService,
+    private readonly surveyService: SurveyService,
   ) {}
 
   // ============ PUBLIC ROUTES (Read-only) ============
@@ -101,6 +103,82 @@ export class EnumerationAreaController {
   @Get('geojson/:id')
   async findOneAsGeoJson(@Param('id', ParseIntPipe) id: number) {
     return this.enumerationAreaService.findOneAsGeoJson(id);
+  }
+
+  /**
+   * Get enumeration areas as Mapbox Vector Tiles (MVT) for a tile.
+   * Dynamic vector tiles on the fly; only active EAs are included.
+   *
+   * @access Public
+   * @param z - Zoom level (0–22)
+   * @param x - Tile X index (0–2^z-1)
+   * @param y - Tile Y index (0–2^z-1), same convention as XYZ/TMS
+   * @query dzongkhagId - Optional. Filter to EAs in this Dzongkhag.
+   * @query administrativeZoneId - Optional. Filter to EAs in this Administrative Zone (Gewog/Thromde).
+   * @query subAdministrativeZoneId - Optional. Filter to EAs in this Sub-Administrative Zone (SAZ/Chiwog/LAP).
+   *
+   * @example
+   * GET /enumeration-area/tiles/10/512/384
+   * GET /enumeration-area/tiles/10/512/384?dzongkhagId=2
+   * GET /enumeration-area/tiles/10/512/384?administrativeZoneId=5
+   * GET /enumeration-area/tiles/10/512/384?subAdministrativeZoneId=13
+   *
+   * @returns application/vnd.mapbox-vector-tile (binary)
+   */
+  @Get('tiles/:z/:x/:y')
+  async getVectorTile(
+    @Param('z', ParseIntPipe) z: number,
+    @Param('x', ParseIntPipe) x: number,
+    @Param('y', ParseIntPipe) y: number,
+    @Query('dzongkhagId') dzongkhagId?: string,
+    @Query('administrativeZoneId') administrativeZoneId?: string,
+    @Query('subAdministrativeZoneId') subAdministrativeZoneId?: string,
+    @Res() res?: Response,
+  ) {
+    const dzId =
+      dzongkhagId != null && dzongkhagId !== ''
+        ? parseInt(dzongkhagId, 10)
+        : undefined;
+    const azId =
+      administrativeZoneId != null && administrativeZoneId !== ''
+        ? parseInt(administrativeZoneId, 10)
+        : undefined;
+    const sazId =
+      subAdministrativeZoneId != null && subAdministrativeZoneId !== ''
+        ? parseInt(subAdministrativeZoneId, 10)
+        : undefined;
+    if (dzongkhagId != null && dzongkhagId !== '' && isNaN(dzId)) {
+      throw new BadRequestException('dzongkhagId must be a number');
+    }
+    if (administrativeZoneId != null && administrativeZoneId !== '' && isNaN(azId)) {
+      throw new BadRequestException('administrativeZoneId must be a number');
+    }
+    if (subAdministrativeZoneId != null && subAdministrativeZoneId !== '' && isNaN(sazId)) {
+      throw new BadRequestException('subAdministrativeZoneId must be a number');
+    }
+    const buffer = await this.enumerationAreaService.getVectorTile(z, x, y, {
+      dzongkhagId: dzId,
+      administrativeZoneId: azId,
+      subAdministrativeZoneId: sazId,
+    });
+    res.setHeader('Content-Type', 'application/vnd.mapbox-vector-tile');
+    res.send(buffer);
+  }
+
+  /**
+   * Get all surveys that include this enumeration area, with household count for this EA in each survey.
+   * Ordered by survey start date (latest first, older at the end).
+   *
+   * @access Public
+   * @param id - Enumeration Area ID
+   * @returns Array of { survey, householdCount }
+   *
+   * @example
+   * GET /enumeration-area/123/surveys-with-household-count
+   */
+  @Get(':id/surveys-with-household-count')
+  async getSurveysWithHouseholdCount(@Param('id', ParseIntPipe) id: number) {
+    return this.surveyService.getSurveysWithHouseholdCountByEnumerationAreaId(id);
   }
 
   /**

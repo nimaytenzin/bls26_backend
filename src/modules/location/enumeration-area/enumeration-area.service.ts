@@ -566,6 +566,114 @@ export class EnumerationAreaService {
   }
 
   /**
+   * Convert tile Z/X/Y (TMS/XYZ) to WGS84 bbox (lon_min, lat_min, lon_max, lat_max).
+   */
+  private tileZxyToBbox(z: number, x: number, y: number): {
+    lon_min: number;
+    lat_min: number;
+    lon_max: number;
+    lat_max: number;
+  } {
+    const n = Math.pow(2, z);
+    const lon_min = (x / n) * 360 - 180;
+    const lon_max = ((x + 1) / n) * 360 - 180;
+    const lat_max_rad = Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n)));
+    const lat_min_rad = Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + 1)) / n)));
+    const lat_max = (lat_max_rad * 180) / Math.PI;
+    const lat_min = (lat_min_rad * 180) / Math.PI;
+    return { lon_min, lat_min, lon_max, lat_max };
+  }
+
+  /**
+   * Get Mapbox Vector Tile (MVT) for enumeration areas in a given tile.
+   * Optional filters: dzongkhagId, administrativeZoneId, subAdministrativeZoneId.
+   * Only active EAs are included. Geometry is in WGS84 (4326); tile is built with PostGIS ST_AsMVT.
+   */
+  async getVectorTile(
+    z: number,
+    x: number,
+    y: number,
+    filters?: {
+      dzongkhagId?: number;
+      administrativeZoneId?: number;
+      subAdministrativeZoneId?: number;
+    },
+  ): Promise<Buffer> {
+    const { dzongkhagId, administrativeZoneId, subAdministrativeZoneId } = filters ?? {};
+    const { lon_min, lat_min, lon_max, lat_max } = this.tileZxyToBbox(z, x, y);
+
+    const baseWith =
+      `WITH bbox AS (
+         SELECT ST_MakeEnvelope(:lon_min, :lat_min, :lon_max, :lat_max, 4326) AS env
+       ),
+       tile AS (
+         SELECT ea.id, ea.name, ea.description, ea."areaCode",
+           ST_AsMVTGeom(
+             ST_CurveToLine(
+               ST_Intersection(ST_MakeValid(ea.geom), bbox.env)
+             )::geometry,
+             bbox.env::box2d,
+             4096, 256, true
+           ) AS geom
+         FROM "EnumerationAreas" ea`;
+
+    const baseWhere =
+      ` ea."isActive" = true
+           AND ea.geom IS NOT NULL
+           AND ST_Intersects(ST_MakeValid(ea.geom), bbox.env)
+       )
+       SELECT ST_AsMVT(tile, 'enumeration_areas', 4096, 'geom') AS mvt FROM tile`;
+
+    const needsAz = dzongkhagId != null || administrativeZoneId != null;
+    const needsJ = subAdministrativeZoneId != null || needsAz;
+
+    let fromClause: string;
+    const conditions: string[] = [];
+
+    if (needsAz) {
+      fromClause = `
+             INNER JOIN "EnumerationAreaSubAdministrativeZones" j ON j."enumerationAreaId" = ea.id
+             INNER JOIN "SubAdministrativeZones" saz ON j."subAdministrativeZoneId" = saz.id
+             INNER JOIN "AdministrativeZones" az ON saz."administrativeZoneId" = az.id
+             CROSS JOIN bbox`;
+      if (subAdministrativeZoneId != null) conditions.push('j."subAdministrativeZoneId" = :subAdministrativeZoneId');
+      if (administrativeZoneId != null) conditions.push('az.id = :administrativeZoneId');
+      if (dzongkhagId != null) conditions.push('az."dzongkhagId" = :dzongkhagId');
+    } else if (needsJ) {
+      fromClause = `
+             INNER JOIN "EnumerationAreaSubAdministrativeZones" j ON j."enumerationAreaId" = ea.id
+             CROSS JOIN bbox`;
+      conditions.push('j."subAdministrativeZoneId" = :subAdministrativeZoneId');
+    } else {
+      fromClause = `
+             CROSS JOIN bbox`;
+    }
+
+    const whereClause =
+      conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') + ' AND' : ' WHERE';
+
+    const query = baseWith + fromClause + whereClause + baseWhere;
+
+    const replacements: Record<string, number> = {
+      lon_min,
+      lat_min,
+      lon_max,
+      lat_max,
+    };
+    if (subAdministrativeZoneId != null) replacements.subAdministrativeZoneId = subAdministrativeZoneId;
+    if (administrativeZoneId != null) replacements.administrativeZoneId = administrativeZoneId;
+    if (dzongkhagId != null) replacements.dzongkhagId = dzongkhagId;
+
+    const rows: { mvt: Buffer }[] = await this.enumerationAreaRepository.sequelize.query(query, {
+      type: QueryTypes.SELECT,
+      replacements,
+    });
+
+    const mvt = rows?.[0]?.mvt;
+    return Buffer.isBuffer(mvt) ? mvt : Buffer.alloc(0);
+  }
+
+  /**
    * Find enumeration areas by administrative zone with optional associations
    * Uses junction table to find all EAs linked to SAZs in the given administrative zone
    * By default, only returns active EAs (isActive = true)

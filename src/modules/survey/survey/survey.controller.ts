@@ -104,6 +104,95 @@ export class SurveyController {
     return this.surveyService.bulkUploadHouseholdCountsFromCsv(file.buffer, userId);
   }
 
+  /**
+   * Get Excel template for survey household upload (Process B: create survey + CSV).
+   *
+   * The template contains headers matching the HCES 2025-style CSV:
+   * Dzongkhag, dzongkhagCode, gewog/thromde, gewog/thromde code, chiwog/lap,
+   * chiwogLapCode, eaCode, EA Description, hhCount
+   *
+   * @access Admin only
+   * @route GET /survey/household-upload/template/excel
+   * @returns Excel (.xlsx) file
+   */
+  @Get('household-upload/template/excel')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async getHouseholdUploadTemplateExcel(@Res() res: Response) {
+    const buffer = await this.surveyService.generateHouseholdUploadTemplateExcel();
+    const filename = `survey_household_upload_template_${Date.now()}.xlsx`;
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${filename}"`,
+    );
+    res.send(buffer);
+  }
+
+  /**
+   * Create a new survey and bulk upload household counts via CSV (HCES-style, single hhCount column).
+   *
+   * CSV headers (tab or comma separated), HCES 2025-style:
+   * Dzongkhag, dzongkhagCode, gewog/thromde, gewog/thromde code, chiwog/lap, chiwogLapCode, eaCode, EA Description, hhCount
+   *
+   * - EA is resolved by codes chain: dzongkhagCode -> adminZoneCode -> subAdminZoneCode -> eaCode
+   * - hhCount is the total households for that EA in the new survey; for each household a dummy structure + listing is created
+   *
+   * Validation and rollback:
+   * - If required headers are missing or any row has parse errors (missing fields, EA not found, invalid hhCount),
+   *   no survey is created; response is { survey: null, parseErrors: [{ row, reason }], bulkResult: null }.
+   * - If all rows validate but any step fails during processing, the entire operation is rolled back (survey and all
+   *   created data are removed); response is { survey: null, parseErrors: [{ row, reason }], bulkResult: null }.
+   *
+   * @access Admin only
+   * @route POST /survey/household-upload/create-with-survey
+   * @form multipart/form-data:
+   *   - text fields: CreateSurveyDto fields (name, description, startDate, endDate, year, ...)
+   *   - file: CSV file (field name: \"file\")
+   */
+  @Post('household-upload/create-with-survey')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+      fileFilter: (req, file, cb) => {
+        if (
+          file.mimetype === 'text/csv' ||
+          file.mimetype === 'application/vnd.ms-excel' ||
+          file.originalname.endsWith('.csv')
+        ) {
+          cb(null, true);
+        } else {
+          cb(new BadRequestException('Invalid file type. Only CSV files are allowed.'), false);
+        }
+      },
+    }),
+  )
+  async createSurveyWithHouseholdUploadCsv(
+    @UploadedFile() file: any,
+    @Body() createSurveyDto: CreateSurveyDto,
+    @Request() req,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new Error('User ID not found in request');
+    }
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    return this.surveyService.createSurveyWithHouseholdUploadFromCsv(
+      createSurveyDto,
+      file.buffer,
+      userId,
+    );
+  }
+
 
   /**
    * Get all active surveys (no pagination)

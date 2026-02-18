@@ -57,10 +57,7 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
     PublicPageSettingsModule,
   ],
   controllers: [AppController],
-  providers: [AppService, {
-    provide: APP_GUARD,
-    useClass: JwtAuthGuard,
-  },],
+  providers: [AppService, ],
 
 })
 export class AppModule {}

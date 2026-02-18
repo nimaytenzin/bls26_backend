@@ -1,0 +1,34 @@
+%% Survey & Household Upload - Main Workflow
+%% Renders in Mermaid Live Editor, GitHub, or any Mermaid-supported viewer
+
+flowchart TB
+  subgraph ProcessA["Process A: Bulk Upload CSV (existing surveys)"]
+    A1[POST /survey/auto-household-upload/csv] --> A2[Parse CSV: codes + surveyId1, surveyId2...]
+    A2 --> A3[For each row × each surveyId column]
+    A3 --> A4[Resolve EA by codes]
+    A4 --> A5[Find or Create SurveyEnumerationArea]
+    A5 --> A6[Replace existing listings/structures if any]
+    A6 --> A7[Create Blank Household Listings]
+    A7 --> A8[Publish Survey EA]
+  end
+
+  subgraph ProcessB["Process B: Create Survey with Household Upload"]
+    B1[Supply survey details + CSV file] --> B2[Create Survey]
+    B2 --> B3[Parse CSV: codes + hhCount]
+    B3 --> B4[For each row]
+    B4 --> B5[Resolve EA by codes]
+    B5 --> B6[Find or Create SurveyEnumerationArea]
+    B6 --> B7[Replace existing listings/structures if any]
+    B7 --> B8[Create Blank Household Listings]
+    B8 --> B9[Publish Survey EA]
+  end
+
+  A7 -.->|same subprocess| Shared["Create Blank Household Listings"]
+  B8 -.->|same subprocess| Shared
+
+  subgraph SharedDetail["Create Blank Household Listings (detail)"]
+    S1[For i = 1 to count] --> S2[Create Structure STR-0001...]
+    S2 --> S3[Create Household Listing HH-0001...]
+    S3 --> S4[Link to structure, submittedBy userId]
+    S4 --> S1
+  end

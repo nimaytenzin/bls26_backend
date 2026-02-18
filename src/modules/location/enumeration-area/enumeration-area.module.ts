@@ -6,8 +6,10 @@ import { EnumerationAreaSubAdministrativeZone } from './entities/enumeration-are
 import { EnumerationAreaLineage } from './entities/enumeration-area-lineage.entity';
 import { SubAdministrativeZone } from '../sub-administrative-zone/entities/sub-administrative-zone.entity';
 import { AdministrativeZone } from '../administrative-zone/entities/administrative-zone.entity';
+import { SurveyModule } from '../../survey/survey/survey.module';
 
 @Module({
+  imports: [SurveyModule],
   controllers: [EnumerationAreaController],
   providers: [
     EnumerationAreaService,

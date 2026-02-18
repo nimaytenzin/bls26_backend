@@ -28,7 +28,9 @@ import {
   PaginatedResponse,
 } from '../../../common/utils/pagination.util';
 import { Op } from 'sequelize';
+import type { Transaction } from 'sequelize';
 import { SupervisorHelperService } from '../../auth/services/supervisor-helper.service';
+import * as ExcelJS from 'exceljs';
 
 @Injectable()
 export class SurveyService {
@@ -383,6 +385,80 @@ export class SurveyService {
     });
 
     return this.findOne(surveyId);
+  }
+
+  /**
+   * Get all surveys that include the given enumeration area, with household count for that EA in each survey.
+   * Ordered by survey start date (latest first).
+   */
+  async getSurveysWithHouseholdCountByEnumerationAreaId(
+    enumerationAreaId: number,
+  ): Promise<
+    Array<{
+      survey: {
+        id: number;
+        name: string;
+        description: string;
+        startDate: string;
+        endDate: string;
+        year: number;
+        status: string;
+      };
+      householdCount: number;
+    }>
+  > {
+    const surveyEAs = await this.surveyEnumerationAreaRepository.findAll({
+      where: { enumerationAreaId },
+      include: [
+        {
+          model: Survey,
+          as: 'survey',
+          attributes: ['id', 'name', 'description', 'startDate', 'endDate', 'year', 'status'],
+          required: true,
+        },
+      ],
+    });
+
+    if (surveyEAs.length === 0) {
+      return [];
+    }
+
+    const surveyEAIds = surveyEAs.map((sea) => sea.id);
+    const listings = await this.householdListingRepository.findAll({
+      where: { surveyEnumerationAreaId: surveyEAIds },
+      attributes: ['surveyEnumerationAreaId'],
+    });
+
+    const countBySeaId = new Map<number, number>();
+    listings.forEach((l) => {
+      countBySeaId.set(
+        l.surveyEnumerationAreaId,
+        (countBySeaId.get(l.surveyEnumerationAreaId) ?? 0) + 1,
+      );
+    });
+
+    const result = surveyEAs.map((sea) => {
+      const survey = (sea as any).survey;
+      return {
+        survey: {
+          id: survey.id,
+          name: survey.name,
+          description: survey.description,
+          startDate: survey.startDate,
+          endDate: survey.endDate,
+          year: survey.year,
+          status: survey.status,
+        },
+        householdCount: countBySeaId.get(sea.id) ?? 0,
+      };
+    });
+
+    result.sort((a, b) => {
+      const dateA = new Date(a.survey.startDate).getTime();
+      const dateB = new Date(b.survey.startDate).getTime();
+      return dateB - dateA;
+    });
+    return result;
   }
 
   /**
@@ -1292,10 +1368,7 @@ export class SurveyService {
     }
 
     const delimiter = lines[0].includes('\t') ? '\t' : ',';
-    const splitRow = (row: string) =>
-      row
-        .split(delimiter)
-        .map((c) => c.trim().replace(/^"|"$/g, ''));
+    const splitRow = (row: string) => this.parseCSVRow(row, delimiter);
 
     const headers = splitRow(lines[0]).map((h) => h.toLowerCase());
 
@@ -1404,6 +1477,370 @@ export class SurveyService {
       parseErrors,
       bulkResult,
     };
+  }
+
+  /**
+   * Create a new survey and bulk upload household counts via CSV (codes-based EA lookup, single hhCount column).
+   * CSV headers (tab or comma), HCES 2025 style:
+   * Dzongkhag, dzongkhagCode, gewog/thromde, gewog/thromde code, chiwog/lap, chiwogLapCode, eaCode, EA Description, hhCount
+   *
+   * - If any row has parse errors (missing fields, EA not found, invalid hhCount) or required headers are missing,
+   *   no survey is created and parseErrors are returned (rollback = nothing persisted).
+   * - If all rows validate, survey and all data are created inside a transaction; if any step fails, full rollback.
+   */
+  async createSurveyWithHouseholdUploadFromCsv(
+    createSurveyDto: CreateSurveyDto,
+    fileBuffer: Buffer,
+    userId: number,
+  ): Promise<{
+    survey: Survey | null;
+    parseErrors: Array<{ row: number; reason: string }>;
+    bulkResult: BulkHouseholdUploadResponseDto | null;
+  }> {
+    const { enumerationAreaIds, ...surveyData } = createSurveyDto;
+
+    // 1. Parse and validate CSV first (no survey created yet)
+    const csvText = fileBuffer.toString('utf-8');
+    const lines = csvText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    if (lines.length < 2) {
+      return {
+        survey: null,
+        parseErrors: [
+          {
+            row: 1,
+            reason: 'CSV must include header and at least one data row',
+          },
+        ],
+        bulkResult: null,
+      };
+    }
+
+    const delimiter = lines[0].includes('\t') ? '\t' : ',';
+    const splitRow = (row: string) => this.parseCSVRow(row, delimiter);
+
+    const headers = splitRow(lines[0]).map((h) => h.toLowerCase());
+
+    const dzHeader = 'dzongkhagcode';
+    const eaHeader = 'eacode';
+    const adminHeader = headers.includes('adminzonecode')
+      ? 'adminzonecode'
+      : headers.includes('gewog/thromde code')
+        ? 'gewog/thromde code'
+        : null;
+    const subAdminHeader = headers.includes('subadminzonecode')
+      ? 'subadminzonecode'
+      : headers.includes('chiwoglapcode')
+        ? 'chiwoglapcode'
+        : null;
+    const hhCountHeader = headers.includes('hhcount') ? 'hhcount' : null;
+
+    const missingHeaders: string[] = [];
+    if (!headers.includes(dzHeader)) missingHeaders.push('dzongkhagCode');
+    if (!adminHeader) missingHeaders.push('adminZoneCode / gewog/thromde code');
+    if (!subAdminHeader)
+      missingHeaders.push('subAdminZoneCode / chiwogLapCode');
+    if (!headers.includes(eaHeader)) missingHeaders.push('eaCode');
+    if (!hhCountHeader) missingHeaders.push('hhCount');
+
+    if (missingHeaders.length > 0) {
+      return {
+        survey: null,
+        parseErrors: [
+          {
+            row: 1,
+            reason: `Missing required headers: ${missingHeaders.join(', ')}`,
+          },
+        ],
+        bulkResult: null,
+      };
+    }
+
+    const getVal = (row: string[], headerKey: string) => {
+      const idx = headers.indexOf(headerKey);
+      return idx >= 0 ? row[idx] || '' : '';
+    };
+
+    type ItemWithRow = BulkHouseholdUploadDto['items'][0] & { rowNumber: number };
+    const items: ItemWithRow[] = [];
+    const parseErrors: Array<{ row: number; reason: string }> = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const row = splitRow(lines[i]);
+      const rowNumber = i + 1;
+
+      const dzCode = getVal(row, dzHeader);
+      const azCode = adminHeader ? getVal(row, adminHeader) : '';
+      const sazCode = subAdminHeader ? getVal(row, subAdminHeader) : '';
+      const eaCode = getVal(row, eaHeader);
+      const hhRaw = hhCountHeader ? getVal(row, hhCountHeader) : '';
+
+      if (!dzCode || !azCode || !sazCode || !eaCode) {
+        parseErrors.push({
+          row: rowNumber,
+          reason:
+            'Missing one of dzongkhagCode/adminZoneCode/subAdminZoneCode/eaCode',
+        });
+        continue;
+      }
+
+      const eaId = await this.resolveEnumerationAreaByCodes(
+        dzCode,
+        azCode,
+        sazCode,
+        eaCode,
+      );
+
+      if (!eaId) {
+        parseErrors.push({
+          row: rowNumber,
+          reason: `Enumeration area not found for codes dzongkhag=${dzCode}, admin=${azCode}, subAdmin=${sazCode}, ea=${eaCode}`,
+        });
+        continue;
+      }
+
+      if (!hhRaw || hhRaw.trim() === '') {
+        parseErrors.push({
+          row: rowNumber,
+          reason: 'Missing hhCount',
+        });
+        continue;
+      }
+
+      const count = Number(hhRaw);
+      if (!Number.isFinite(count) || count < 0) {
+        parseErrors.push({
+          row: rowNumber,
+          reason: `Invalid hhCount value: ${hhRaw}`,
+        });
+        continue;
+      }
+
+      if (count === 0) {
+        parseErrors.push({
+          row: rowNumber,
+          reason: 'hhCount must be greater than 0',
+        });
+        continue;
+      }
+
+      items.push({
+        enumerationAreaId: eaId,
+        surveyId: 0, // set after survey create
+        householdCount: count,
+        rowNumber,
+      });
+    }
+
+    if (items.length === 0) {
+      return {
+        survey: null,
+        parseErrors:
+          parseErrors.length > 0
+            ? parseErrors
+            : [
+                {
+                  row: 0,
+                  reason:
+                    'No valid items found in CSV (hhCount must be > 0 for at least one row)',
+                },
+              ],
+        bulkResult: null,
+      };
+    }
+
+    // Any parse/EA error: do not create survey, return errors
+    if (parseErrors.length > 0) {
+      return {
+        survey: null,
+        parseErrors,
+        bulkResult: null,
+      };
+    }
+
+    // 2. All rows valid: create survey and process in one transaction (rollback on any failure)
+    const sequelize = this.surveyRepository.sequelize;
+    try {
+      const result = await sequelize.transaction(
+        async (t: Transaction): Promise<{
+          survey: Survey;
+          bulkResult: BulkHouseholdUploadResponseDto;
+        }> => {
+          const survey = await this.surveyRepository.create(
+            instanceToPlain(surveyData),
+            { transaction: t },
+          );
+
+          const bulkResult: BulkHouseholdUploadResponseDto = {
+            totalItems: items.length,
+            created: 0,
+            skipped: 0,
+            householdListingsCreated: 0,
+            errors: [],
+          };
+
+          for (const item of items) {
+            const rowNumber = item.rowNumber;
+            try {
+              const surveyId = survey.id;
+              const enumerationAreaId = item.enumerationAreaId;
+              const householdCount = item.householdCount;
+
+              let surveyEA =
+                await this.surveyEnumerationAreaRepository.findOne({
+                  where: { surveyId, enumerationAreaId },
+                  transaction: t,
+                });
+
+              if (!surveyEA) {
+                surveyEA = await this.surveyEnumerationAreaRepository.create(
+                  { surveyId, enumerationAreaId },
+                  { transaction: t },
+                );
+                bulkResult.created++;
+              }
+
+              const existingListings =
+                await this.householdListingRepository.findAll({
+                  where: { surveyEnumerationAreaId: surveyEA.id },
+                  attributes: ['id', 'structureId'],
+                  transaction: t,
+                });
+
+              if (existingListings.length > 0) {
+                const structureIds = [
+                  ...new Set(
+                    existingListings
+                      .map((l) => l.structureId)
+                      .filter((id): id is number => id != null),
+                  ),
+                ];
+                await this.householdListingRepository.destroy({
+                  where: { surveyEnumerationAreaId: surveyEA.id },
+                  transaction: t,
+                });
+                if (structureIds.length > 0) {
+                  await this.structureRepository.destroy({
+                    where: { id: structureIds },
+                    transaction: t,
+                  });
+                }
+              }
+
+              const listResult =
+                await this.householdListingService.createBlankHouseholdListings(
+                  surveyEA.id,
+                  {
+                    count: householdCount,
+                    remarks: 'Auto-uploaded household data',
+                  },
+                  userId,
+                  t,
+                );
+              bulkResult.householdListingsCreated += listResult.created;
+
+              surveyEA.isPublished = true;
+              (surveyEA as any).publishedBy = userId;
+              (surveyEA as any).publishedDate = new Date();
+              await surveyEA.save({ transaction: t });
+            } catch (e: any) {
+              const err = new Error(`Row ${rowNumber}: ${e?.message ?? String(e)}`);
+              (err as any).rowNumber = rowNumber;
+              throw err;
+            }
+          }
+
+          return { survey, bulkResult };
+        },
+      );
+
+      return {
+        survey: result.survey,
+        parseErrors: [],
+        bulkResult: result.bulkResult,
+      };
+    } catch (err: any) {
+      const failedRow = (err && (err as any).rowNumber) ?? 0;
+      return {
+        survey: null,
+        parseErrors: [
+          {
+            row: failedRow,
+            reason: err?.message ?? String(err),
+          },
+        ],
+        bulkResult: null,
+      };
+    }
+  }
+
+  /**
+   * Generate Excel template for survey household upload (Process B).
+   * Headers follow the HCES 2025-style CSV format.
+   */
+  async generateHouseholdUploadTemplateExcel(): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Household Upload Template');
+
+    worksheet.columns = [
+      { header: 'Dzongkhag', key: 'dzongkhag', width: 20 },
+      { header: 'dzongkhagCode', key: 'dzongkhagCode', width: 15 },
+      { header: 'gewog/thromde', key: 'gewogThromde', width: 20 },
+      { header: 'gewog/thromde code', key: 'gewogThromdeCode', width: 20 },
+      { header: 'chiwog/lap', key: 'chiwogLap', width: 20 },
+      { header: 'chiwogLapCode', key: 'chiwogLapCode', width: 20 },
+      { header: 'eaCode', key: 'eaCode', width: 15 },
+      { header: 'EA Description', key: 'eaDescription', width: 40 },
+      { header: 'hhCount', key: 'hhCount', width: 12 },
+    ];
+
+    // Style header row
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF3498DB' },
+    };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    headerRow.height = 20;
+
+    // Freeze header row
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  }
+
+  /**
+   * Parse a single CSV line respecting double-quoted fields (commas inside quotes are not delimiters).
+   * Handles RFC 4180-style CSV so EA Description and similar fields can contain commas.
+   */
+  private parseCSVRow(line: string, delimiter: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (c === delimiter && !inQuotes) {
+        result.push(current.trim().replace(/^"|"$/g, ''));
+        current = '';
+      } else {
+        current += c;
+      }
+    }
+    result.push(current.trim().replace(/^"|"$/g, ''));
+    return result;
   }
 
   private async resolveEnumerationAreaByCodes(
