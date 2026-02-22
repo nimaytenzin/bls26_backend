@@ -96,28 +96,33 @@ export class BuildingsService {
   async findAsGeoJsonByEnumerationArea(
     enumerationAreaId: number,
   ): Promise<any> {
-    const data: any = await this.buildingRepository.sequelize.query(
+    const data: any = await this.sequelize.query(
       `SELECT jsonb_build_object(
         'type',     'FeatureCollection',
-        'features', jsonb_agg(features.feature)
+        'features', COALESCE(jsonb_agg(features.feature), '[]'::jsonb)
       )
       FROM (
         SELECT jsonb_build_object(
           'type',       'Feature',
-          'id',         inputs.id,
           'geometry',   ST_AsGeoJSON(geom)::jsonb,
           'properties', to_jsonb(inputs) - 'geom'
         ) AS feature
-        FROM (SELECT * FROM "Buildings" WHERE "enumerationAreaId" = ${enumerationAreaId} ORDER BY "structureId") inputs
+        FROM (
+          SELECT * FROM public."buildingGeom" 
+          WHERE "eaId" = ${enumerationAreaId}
+        ) inputs
       ) features;`,
+      {
+        type: QueryTypes.SELECT,
+      },
     );
 
-    return (
-      data[0][0].jsonb_build_object || {
-        type: 'FeatureCollection',
-        features: [],
-      }
-    );
+    const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
+    const result = row?.jsonb_build_object ?? {
+      type: 'FeatureCollection',
+      features: [],
+    };
+    return result;
   }
 
   /**

@@ -10,7 +10,9 @@ import { UpdateSurveyEnumerationAreaStructureDto } from './dto/update-survey-enu
 import { SurveyEnumerationAreaStructure } from './entities/survey-enumeration-area-structure.entity';
 import { SurveyEnumerationArea } from '../survey-enumeration-area/entities/survey-enumeration-area.entity';
 import { SurveyEnumerationAreaHouseholdListing } from '../survey-enumeration-area-household-listing/entities/survey-enumeration-area-household-listing.entity';
+import { SurveyEnumerationAreaHouseholdSample } from '../../sampling/entities/survey-enumeration-area-household-sample.entity';
 import { User } from '../../auth/entities/user.entity';
+import { Op } from 'sequelize';
 
 @Injectable()
 export class SurveyEnumerationAreaStructureService {
@@ -21,6 +23,8 @@ export class SurveyEnumerationAreaStructureService {
     private readonly surveyEnumerationAreaRepository: typeof SurveyEnumerationArea,
     @Inject('SURVEY_ENUMERATION_AREA_HOUSEHOLD_LISTING_REPOSITORY')
     private readonly householdListingRepository: typeof SurveyEnumerationAreaHouseholdListing,
+    @Inject('SURVEY_EA_HOUSEHOLD_SAMPLE_REPOSITORY')
+    private readonly householdSampleRepository: typeof SurveyEnumerationAreaHouseholdSample,
   ) {}
 
   /**
@@ -210,6 +214,34 @@ export class SurveyEnumerationAreaStructureService {
       throw new BadRequestException(
         `Cannot delete structure with ID ${id}. It has ${householdCount} associated household(s). Please remove or reassign households first.`,
       );
+    }
+
+    await structure.destroy();
+  }
+
+  /**
+   * Force delete a structure and all its associated household listings (and their samples).
+   * Deletes in order: household samples → household listings → structure.
+   */
+  async removeForce(id: number): Promise<void> {
+    const structure = await this.structureRepository.findByPk(id);
+    if (!structure) {
+      throw new NotFoundException(`Structure with ID ${id} not found`);
+    }
+
+    const listings = await this.householdListingRepository.findAll({
+      where: { structureId: id },
+      attributes: ['id'],
+    });
+    const listingIds = listings.map((l) => l.id);
+
+    if (listingIds.length > 0) {
+      await this.householdSampleRepository.destroy({
+        where: { householdListingId: { [Op.in]: listingIds } },
+      });
+      await this.householdListingRepository.destroy({
+        where: { structureId: id },
+      });
     }
 
     await structure.destroy();

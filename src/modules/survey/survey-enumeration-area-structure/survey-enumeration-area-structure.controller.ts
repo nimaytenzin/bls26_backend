@@ -125,7 +125,20 @@ export class SurveyEnumerationAreaStructureController {
   }
 
   /**
-   * Delete a structure
+   * Force delete a structure and all associated households (and their samples).
+   * Use when you need to remove a structure regardless of household count.
+   * @access Admin, Supervisor
+   */
+  @Delete(':id/force')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ENUMERATOR)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  removeForce(@Param('id', ParseIntPipe) id: number) {
+    return this.structureService.removeForce(id);
+  }
+
+  /**
+   * Delete a structure (fails if it has associated households; use force route to delete anyway)
    * @access Admin, Supervisor
    */
   @Delete(':id')
