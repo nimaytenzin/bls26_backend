@@ -7,7 +7,7 @@ import {
 } from 'class-validator';
 import { UserRole } from '../entities/user.entity';
 
-export class RegisterDto {
+export class CreateUserDto {
   @IsNotEmpty()
   @IsString()
   name: string;
@@ -25,7 +25,7 @@ export class RegisterDto {
   @MinLength(6)
   password: string;
 
-  @IsOptional()
+  @IsNotEmpty()
   @IsEnum(UserRole)
-  role?: UserRole;
+  role: UserRole;
 }

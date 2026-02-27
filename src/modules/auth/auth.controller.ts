@@ -11,17 +11,16 @@ import {
   Patch,
   Delete,
   Query,
-  ForbiddenException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { ForgotPasswordDto } from './dto/forgot-password.dto';
-import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { AdminResetPasswordDto } from './dto/admin-reset-password.dto';
-import { AssignDzongkhagDto } from './dto/assign-dzongkhag.dto';
+import { BulkCreateEnumeratorsDto } from './dto/bulk-create-enumerators.dto';
 import { UserRole } from './entities/user.entity';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -45,25 +44,11 @@ export class AuthController {
     return this.authService.login(loginDto);
   }
 
-  @Post('forgot-password')
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
-    return this.authService.forgotPassword(forgotPasswordDto);
-  }
-
-  @Post('reset-password')
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
-    return this.authService.resetPassword(resetPasswordDto);
-  }
-
   @Post('change-password')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async changePassword(
-    @Request() req,
+    @Request() req: { user: { id: number } },
     @Body() changePasswordDto: ChangePasswordDto,
   ) {
     return this.authService.changePassword(req.user.id, changePasswordDto);
@@ -71,20 +56,15 @@ export class AuthController {
 
   @Get('profile')
   @UseGuards(JwtAuthGuard)
-  async getProfile(@Request() req) {
+  async getProfile(@Request() req: { user: { id: number } }) {
     return this.authService.getUserById(req.user.id);
   }
 
-  /**
-   * Update own profile
-   * @access Protected - All authenticated users
-   * @route PATCH /auth/profile
-   */
   @Patch('profile')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async updateOwnProfile(
-    @Request() req,
+    @Request() req: { user: { id: number } },
     @Body() updateProfileDto: UpdateProfileDto,
   ) {
     return this.authService.updateOwnProfile(req.user.id, updateProfileDto);
@@ -94,11 +74,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async signout() {
-    // JWT tokens are stateless, so signout is handled client-side
-    // by removing the token from storage
-    return {
-      message: 'Signed out successfully',
-    };
+    return { message: 'Signed out successfully' };
   }
 
   @Get('admin-only')
@@ -108,46 +84,15 @@ export class AuthController {
     return { message: 'This is an admin-only endpoint' };
   }
 
-  // ============ USER MANAGEMENT ROUTES (Admin/Supervisor) ============
+  // ============ USER MANAGEMENT (Admin) ============
 
-  /**
-   * Get all users (Admin/Supervisor only)
-   * @access Protected - Admin, Supervisor
-   * @query role - Optional filter by user role
-   */
   @Get('users')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
+  @Roles(UserRole.ADMIN)
   async getAllUsers(@Query('role') role?: string) {
     return this.authService.getAllUsers(role as UserRole);
   }
 
-  /**
-   * Get all supervisors (Admin only)
-   * @access Protected - Admin only
-   */
-  @Get('supervisors')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  async getAllSupervisors() {
-    return this.authService.getUsersByRole(UserRole.SUPERVISOR);
-  }
-
-  /**
-   * Get all supervisors with their assigned dzongkhags (Admin only)
-   * @access Protected - Admin only
-   */
-  @Get('supervisors/with-dzongkhags')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  async getAllSupervisorsWithDzongkhags() {
-    return this.authService.getAllSupervisorsWithDzongkhags();
-  }
-
-  /**
-   * Get all admins (Admin only)
-   * @access Protected - Admin only
-   */
   @Get('admins')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
@@ -155,130 +100,89 @@ export class AuthController {
     return this.authService.getUsersByRole(UserRole.ADMIN);
   }
 
-  /**
-   * Get all enumerators (Admin/Supervisor only)
-   * @access Protected - Admin, Supervisor
-   */
   @Get('enumerators')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
+  @Roles(UserRole.ADMIN)
   async getAllEnumerators() {
     return this.authService.getUsersByRole(UserRole.ENUMERATOR);
   }
 
-  /**
-   * Create a new admin (Admin only)
-   * @access Protected - Admin only
-   */
+  /** Create a single user (admin or enumerator). */
+  @Post('users')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async createUser(@Body() createUserDto: CreateUserDto) {
+    return this.authService.createUserWithRole(
+      {
+        name: createUserDto.name,
+        cid: createUserDto.cid,
+        phoneNumber: createUserDto.phoneNumber,
+        password: createUserDto.password,
+      },
+      createUserDto.role,
+    );
+  }
+
+  /** Create a single admin. */
   @Post('admins')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  async createAdmin(@Body() registerDto: RegisterDto) {
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Roles(UserRole.ADMIN)
+  async createAdmin(@Body() createUserDto: CreateUserDto) {
     return this.authService.createUserWithRole(
-      registerDto,
+      {
+        name: createUserDto.name,
+        cid: createUserDto.cid,
+        phoneNumber: createUserDto.phoneNumber,
+        password: createUserDto.password,
+      },
       UserRole.ADMIN,
     );
   }
 
-  /**
-   * Create a new admin (Alternative endpoint for signup)
-   * @access Protected - Admin only
-   */
-  @Post('admin/signup')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  async adminSignup(@Body() registerDto: RegisterDto) {
-    return this.authService.createUserWithRole(
-      registerDto,
-      UserRole.ADMIN,
-    );
-  }
-
-  /**
-   * Create a new supervisor (Admin only)
-   * @access Protected - Admin only
-   */
-  @Post('supervisors')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  async createSupervisor(@Body() registerDto: RegisterDto) {
-    return this.authService.createUserWithRole(
-      registerDto,
-      UserRole.SUPERVISOR,
-    );
-  }
-
-  /**
-   * Create a new enumerator (Admin/Supervisor only)
-   * @access Protected - Admin, Supervisor
-   */
+  /** Create a single enumerator. */
   @Post('enumerators')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
-  async createEnumerator(@Body() registerDto: RegisterDto) {
+  @Roles(UserRole.ADMIN)
+  async createEnumerator(@Body() createUserDto: CreateUserDto) {
     return this.authService.createUserWithRole(
-      registerDto,
+      {
+        name: createUserDto.name,
+        cid: createUserDto.cid,
+        phoneNumber: createUserDto.phoneNumber,
+        password: createUserDto.password,
+      },
       UserRole.ENUMERATOR,
     );
   }
 
-  /**
-   * Get single user by ID (Admin/Supervisor only)
-   * @access Protected - Admin, Supervisor
-   */
+  /** Bulk upload enumerators (CID must be unique; duplicates are skipped with error). */
+  @Post('enumerators/bulk')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async bulkCreateEnumerators(@Body() body: BulkCreateEnumeratorsDto) {
+    return this.authService.bulkCreateEnumerators(body.enumerators);
+  }
+
   @Get('users/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
+  @Roles(UserRole.ADMIN)
   async getUserById(@Param('id') id: string) {
     return this.authService.getUserById(+id);
   }
 
-  /**
-   * Get comprehensive user profile with all assignments
-   * Returns user details with role-specific data:
-   * - Supervisors: includes dzongkhag assignments
-   * - Enumerators: includes survey assignments (all and active)
-   * - Admins: basic profile only
-   * @access Protected - Admin, Supervisor, Enumerator (own profile)
-   */
-  @Get('users/:id/profile')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ENUMERATOR)
-  async getUserProfileWithAssignments(
-    @Param('id') id: string,
-    @Request() req,
-  ) {
-    const userId = +id;
-    const requestorId = req.user.id;
-    const requestorRole = req.user.role;
-
-    // Enumerators can only view their own profile
-    if (requestorRole === UserRole.ENUMERATOR && userId !== requestorId) {
-      throw new ForbiddenException('You can only view your own profile');
-    }
-
-    return this.authService.getUserProfileWithAssignments(userId);
-  }
-
-  /**
-   * Update user (Admin only, or Supervisor for Enumerators)
-   * @access Protected - Admin, Supervisor (limited)
-   */
+  /** Update user details (name, phoneNumber). */
   @Patch('users/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
   async updateUser(
     @Param('id') id: string,
-    @Body() updateData: Partial<RegisterDto>,
-    @Request() req,
+    @Body() updateUserDto: UpdateUserDto,
   ) {
-    return this.authService.updateUser(+id, updateData, req.user.role);
+    return this.authService.updateUser(+id, updateUserDto);
   }
 
-  /**
-   * Admin reset password for any user
-   * @access Protected - Admin only
-   */
+  /** Admin reset password for any user (set to the provided new password). */
   @Patch('users/:id/reset-password')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
@@ -293,28 +197,6 @@ export class AuthController {
     );
   }
 
-  /**
-   * Admin reset password for any user (alternative route)
-   * @access Protected - Admin only
-   */
-  @Patch('admin/users/:id/reset-password')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  @HttpCode(HttpStatus.OK)
-  async adminResetPasswordAlt(
-    @Param('id') id: string,
-    @Body() adminResetPasswordDto: AdminResetPasswordDto,
-  ) {
-    return this.authService.adminResetPassword(
-      +id,
-      adminResetPasswordDto.newPassword,
-    );
-  }
-
-  /**
-   * Delete user (Admin only)
-   * @access Protected - Admin only
-   */
   @Delete('users/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
@@ -323,10 +205,6 @@ export class AuthController {
     return this.authService.deleteUser(+id);
   }
 
-  /**
-   * Activate user (Admin only)
-   * @access Protected - Admin only
-   */
   @Patch('users/:id/activate')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
@@ -335,84 +213,11 @@ export class AuthController {
     return this.authService.activateUser(+id);
   }
 
-  /**
-   * Deactivate user (Admin only)
-   * @access Protected - Admin only
-   */
   @Patch('users/:id/deactivate')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @HttpCode(HttpStatus.OK)
   async deactivateUser(@Param('id') id: string) {
     return this.authService.deactivateUser(+id);
-  }
-
-  // ============ DZONGKHAG ASSIGNMENT ROUTES ============
-
-  /**
-   * Get dzongkhags assigned to the current authenticated supervisor
-   * @access Protected - Supervisor only
-   */
-  @Get('my-dzongkhags')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SUPERVISOR)
-  async getMyDzongkhags(@Request() req) {
-    return this.authService.getSupervisorDzongkhags(req.user.id);
-  }
-
-  /**
-   * Assign dzongkhags to a supervisor
-   * @access Protected - Admin only
-   */
-  @Post('supervisors/:id/dzongkhags')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  async assignDzongkhags(
-    @Param('id') supervisorId: string,
-    @Body() assignDzongkhagDto: AssignDzongkhagDto,
-  ) {
-    return this.authService.assignDzongkhags(
-      +supervisorId,
-      assignDzongkhagDto.dzongkhagIds,
-    );
-  }
-
-  /**
-   * Remove dzongkhag assignments from a supervisor
-   * @access Protected - Admin only
-   */
-  @Delete('supervisors/:id/dzongkhags')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  async removeDzongkhags(
-    @Param('id') supervisorId: string,
-    @Body() assignDzongkhagDto: AssignDzongkhagDto,
-  ) {
-    return this.authService.removeDzongkhags(
-      +supervisorId,
-      assignDzongkhagDto.dzongkhagIds,
-    );
-  }
-
-  /**
-   * Get all dzongkhags assigned to a supervisor
-   * @access Protected - Admin, Supervisor
-   */
-  @Get('supervisors/:id/dzongkhags')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
-  async getSupervisorDzongkhags(@Param('id') supervisorId: string) {
-    return this.authService.getSupervisorDzongkhags(+supervisorId);
-  }
-
-  /**
-   * Get all supervisors assigned to a dzongkhag
-   * @access Protected - Admin
-   */
-  @Get('dzongkhags/:id/supervisors')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  async getDzongkhagSupervisors(@Param('id') dzongkhagId: string) {
-    return this.authService.getDzongkhagSupervisors(+dzongkhagId);
   }
 }

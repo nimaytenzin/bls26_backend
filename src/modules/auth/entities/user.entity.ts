@@ -3,16 +3,11 @@ import {
   DataType,
   Model,
   Table,
-  BelongsToMany,
 } from 'sequelize-typescript';
-import { Dzongkhag } from 'src/modules/location/dzongkhag/entities/dzongkhag.entity';
-import { SupervisorDzongkhag } from './supervisor-dzongkhag.entity';
 
 export enum UserRole {
   ADMIN = 'ADMIN',
-  SUPERVISOR = 'SUPERVISOR',
   ENUMERATOR = 'ENUMERATOR',
-  GENERAL_USER='GENERAL_USER',
 }
 
 @Table
@@ -38,13 +33,6 @@ export class User extends Model {
 
   @Column({
     type: DataType.STRING,
-    allowNull: false,
-    unique: true,
-  })
-  emailAddress: string;
-
-  @Column({
-    type: DataType.STRING,
     allowNull: true,
   })
   phoneNumber: string;
@@ -62,17 +50,7 @@ export class User extends Model {
   })
   role: UserRole;
 
-  @Column({
-    type: DataType.STRING,
-    allowNull: true,
-  })
-  resetPasswordToken: string;
-
-  @Column({
-    type: DataType.DATE,
-    allowNull: true,
-  })
-  resetPasswordExpires: Date;
+  
 
   @Column({
     type: DataType.BOOLEAN,
@@ -81,6 +59,5 @@ export class User extends Model {
   })
   isActive: boolean;
 
-  @BelongsToMany(() => Dzongkhag, () => SupervisorDzongkhag)
-  dzongkhags: Dzongkhag[];
+ 
 }

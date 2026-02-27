@@ -6,28 +6,11 @@ import {
   SEQUELIZE,
   TEST,
 } from 'src/constants/constants';
-import { Dzongkhag } from 'src/modules/location/dzongkhag/entities/dzongkhag.entity';
-import { AdministrativeZone } from 'src/modules/location/administrative-zone/entities/administrative-zone.entity';
-import { SubAdministrativeZone } from 'src/modules/location/sub-administrative-zone/entities/sub-administrative-zone.entity';
-import { EnumerationArea } from 'src/modules/location/enumeration-area/entities/enumeration-area.entity';
+import { Dzongkhag } from 'src/modules/dzongkhag/entities/dzongkhag.entity';
+import { EnumerationArea } from 'src/modules/enumeration-area/entities/enumeration-area.entity';
 import { User } from 'src/modules/auth/entities/user.entity';
-import { SupervisorDzongkhag } from 'src/modules/auth/entities/supervisor-dzongkhag.entity';
-import { Survey } from 'src/modules/survey/survey/entities/survey.entity';
-import { SurveyEnumerationAreaHouseholdListing } from 'src/modules/survey/survey-enumeration-area-household-listing/entities/survey-enumeration-area-household-listing.entity';
-import { SurveyEnumerator } from 'src/modules/survey/survey-enumerator/entities/survey-enumerator.entity';
-import { Building } from 'src/modules/buildings/entities/building.entity';
-import { SurveyEnumerationArea } from 'src/modules/survey/survey-enumeration-area/entities/survey-enumeration-area.entity';
-import { EAAnnualStats } from 'src/modules/annual statistics/ea-annual-statistics/entities/ea-annual-stats.entity';
-import { SAZAnnualStats } from 'src/modules/annual statistics/sub-administrative-zone-annual-statistics/entities/saz-annual-stats.entity';
-import { AZAnnualStats } from 'src/modules/annual statistics/administrative-zone-annual-statistics/entities/az-annual-stats.entity';
-import { DzongkhagAnnualStats } from 'src/modules/annual statistics/dzongkhag-annual-statistics/entities/dzongkhag-annual-stats.entity';
-import { SurveySamplingConfig } from 'src/modules/sampling/entities/survey-sampling-config.entity';
-import { SurveyEnumerationAreaSampling } from 'src/modules/sampling/entities/survey-enumeration-area-sampling.entity';
-import { SurveyEnumerationAreaHouseholdSample } from 'src/modules/sampling/entities/survey-enumeration-area-household-sample.entity';
-import { SurveyEnumerationAreaStructure } from 'src/modules/survey/survey-enumeration-area-structure/entities/survey-enumeration-area-structure.entity';
-import { EnumerationAreaSubAdministrativeZone } from 'src/modules/location/enumeration-area/entities/enumeration-area-sub-administrative-zone.entity';
-import { EnumerationAreaLineage } from 'src/modules/location/enumeration-area/entities/enumeration-area-lineage.entity';
-import { PublicPageSettings } from 'src/modules/public-page-settings/entities/public-page-settings.entity';
+import { Structure } from 'src/modules/structure/entities/structure.entity';
+import { HouseholdListing } from 'src/modules/household-listing/entities/household-listing.entity';
 
 export const databaseProviders = [
   {
@@ -76,28 +59,10 @@ export const databaseProviders = [
       const sequelize = new Sequelize(config);
       sequelize.addModels([
         User,
-        SupervisorDzongkhag,
         Dzongkhag,
-        AdministrativeZone,
-        SubAdministrativeZone,
         EnumerationArea,
-        EnumerationAreaSubAdministrativeZone,
-        EnumerationAreaLineage,
-
-        Survey,
-        SurveyEnumerationArea,
-        SurveyEnumerationAreaStructure,
-        SurveyEnumerationAreaHouseholdListing,
-        SurveyEnumerator,
-        Building,
-        EAAnnualStats,
-        SAZAnnualStats,
-        AZAnnualStats,
-        DzongkhagAnnualStats,
-        SurveySamplingConfig,
-        SurveyEnumerationAreaSampling,
-        SurveyEnumerationAreaHouseholdSample,
-        PublicPageSettings,
+        Structure,
+        HouseholdListing,
       ]);
 
       await sequelize.sync();
