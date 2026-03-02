@@ -1,13 +1,12 @@
 module.exports = {
   apps: [{
-    name: 'nsfd-backend',
+    name: 'blg26 port 3089',
     script: 'dist/main.js',
     instances: 1,
     exec_mode: 'fork',
     env: {
       NODE_ENV: 'production',
-      // PORT will be loaded from .env file by the NestJS app
-    },
+     },
     error_file: './logs/pm2-error.log',
     out_file: './logs/pm2-out.log',
     log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
