@@ -17,6 +17,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateEnumeratorItemDto } from './dto/create-enumerator-item.dto';
 import { instanceToPlain } from 'class-transformer';
+import { parse } from 'csv-parse/sync';
 
 @Injectable()
 export class AuthService {
@@ -295,6 +296,55 @@ export class AuthService {
       users,
       errors,
     };
+  }
+
+  /** Parse CSV buffer (headers: name,cid,phoneNumber,password) and bulk create enumerators. */
+  async parseCsvAndBulkCreateEnumerators(
+    buffer: Buffer,
+  ): Promise<{
+    created: number;
+    failed: number;
+    users: any[];
+    errors: { row: number; cid: string; message: string }[];
+  }> {
+    const requiredHeaders = ['name', 'cid', 'phoneNumber', 'password'];
+    let rows: Record<string, string>[];
+    try {
+      const parsed = parse(buffer, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        bom: true,
+      }) as Record<string, string>[];
+      rows = Array.isArray(parsed) ? parsed : [];
+    } catch (err: any) {
+      throw new BadRequestException(
+        `Invalid CSV: ${err?.message ?? 'parse error'}`,
+      );
+    }
+
+    const first = rows[0];
+    if (!first) {
+      throw new BadRequestException(
+        'CSV has no data rows. Use template: name,cid,phoneNumber,password',
+      );
+    }
+    const headers = Object.keys(first);
+    const missing = requiredHeaders.filter((h) => !headers.includes(h));
+    if (missing.length) {
+      throw new BadRequestException(
+        `CSV must have headers: name,cid,phoneNumber,password. Missing: ${missing.join(', ')}`,
+      );
+    }
+
+    const enumerators: CreateEnumeratorItemDto[] = rows.map((row) => ({
+      name: String(row.name ?? '').trim(),
+      cid: String(row.cid ?? '').trim(),
+      phoneNumber: row.phoneNumber ? String(row.phoneNumber).trim() : undefined,
+      password: String(row.password ?? '').trim(),
+    }));
+
+    return this.bulkCreateEnumerators(enumerators);
   }
 
   async deleteUser(userId: number) {

@@ -5,13 +5,19 @@ import {
   UseGuards,
   Get,
   Request,
+  Res,
   HttpCode,
   HttpStatus,
   Param,
   Patch,
   Delete,
   Query,
+  BadRequestException,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -155,12 +161,42 @@ export class AuthController {
     );
   }
 
+  /** Download CSV template for bulk enumerator upload. Headers: name,cid,phoneNumber,password */
+  @Get('enumerators/bulk/template')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  getBulkEnumeratorsTemplate(@Res({ passthrough: false }) res: Response) {
+    const csv =
+      'name,cid,phoneNumber,password\n' +
+      'John Doe,10101010101,17123456,minimum6chars\n';
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="enumerators-bulk-template.csv"',
+    );
+    res.send(csv);
+  }
+
   /** Bulk upload enumerators (CID must be unique; duplicates are skipped with error). */
   @Post('enumerators/bulk')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   async bulkCreateEnumerators(@Body() body: BulkCreateEnumeratorsDto) {
     return this.authService.bulkCreateEnumerators(body.enumerators);
+  }
+
+  /** Bulk upload enumerators from CSV file. CSV must have headers: name,cid,phoneNumber,password */
+  @Post('enumerators/bulk/upload')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor('file'))
+  async bulkUploadEnumeratorsCsv(
+    @UploadedFile() file: { buffer: Buffer } | undefined,
+  ) {
+    if (!file?.buffer) {
+      throw new BadRequestException('No file uploaded. Use form field name "file".');
+    }
+    return this.authService.parseCsvAndBulkCreateEnumerators(file.buffer);
   }
 
   @Get('users/:id')
