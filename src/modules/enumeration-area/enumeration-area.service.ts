@@ -108,6 +108,81 @@ export class EnumerationAreaService {
     };
   }
 
+  /** Fetch geometry for a single EA by its fullEaCode and save to geom. */
+  private async fetchAndUpdateGeomForEa(ea: EnumerationArea): Promise<void> {
+    const fullCode = (ea.fullEaCode || '').trim();
+    if (!fullCode || fullCode.length !== 8 || !/^\d{8}$/.test(fullCode)) {
+      throw new BadRequestException(
+        `Enumeration area ${ea.id} does not have a valid 8‑digit fullEaCode`,
+      );
+    }
+
+    const url = `http://localhost:3000/enumeration-area/geojson/by-full-code/${fullCode}`;
+    const response = await fetch(url as any);
+    if (!response.ok) {
+      throw new BadRequestException(
+        `Failed to fetch geometry for fullEaCode ${fullCode} (status ${response.status})`,
+      );
+    }
+
+    const data: any = await response.json();
+    const geomToSave = data?.geometry ?? data?.geom ?? null;
+
+    if (!geomToSave) {
+      throw new BadRequestException(
+        `GeoJSON response for fullEaCode ${fullCode} did not contain a geometry`,
+      );
+    }
+
+    await ea.update({ geom: geomToSave });
+  }
+
+  /** Update geom for a single EA, optionally accepting geometry directly. */
+  async updateGeom(id: number, geom?: object): Promise<EnumerationArea> {
+    const ea = await this.enumerationAreaRepository.findByPk(id);
+    if (!ea) {
+      throw new NotFoundException(`Enumeration area with ID ${id} not found`);
+    }
+
+    if (geom) {
+      await ea.update({ geom });
+      return ea;
+    }
+
+    await this.fetchAndUpdateGeomForEa(ea);
+    return ea;
+  }
+
+  /** Update geom for all EAs using their fullEaCode and the GeoJSON service. */
+  async updateAllGeom(): Promise<{
+    updated: number;
+    skippedNoCode: number;
+    failed: number;
+  }> {
+    const eas = await this.enumerationAreaRepository.findAll();
+
+    let updated = 0;
+    let skippedNoCode = 0;
+    let failed = 0;
+
+    for (const ea of eas) {
+      const fullCode = (ea.fullEaCode || '').trim();
+      if (!fullCode || fullCode.length !== 8 || !/^\d{8}$/.test(fullCode)) {
+        skippedNoCode += 1;
+        continue;
+      }
+
+      try {
+        await this.fetchAndUpdateGeomForEa(ea);
+        updated += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    return { updated, skippedNoCode, failed };
+  }
+
   async complete(id: number): Promise<EnumerationArea> {
     const ea = await this.findOne(id, false, false);
     const validation = await this.checkEaCompletion(id);

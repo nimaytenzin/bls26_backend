@@ -5,6 +5,8 @@ import { CreateDzongkhagDto } from './dto/create-dzongkhag.dto';
 import { UpdateDzongkhagDto } from './dto/update-dzongkhag.dto';
 import { instanceToPlain } from 'class-transformer';
 import { EnumerationArea } from '../enumeration-area/entities/enumeration-area.entity';
+import { Town } from '../town/entities/town.entity';
+import { Lap } from '../lap/entities/lap.entity';
 import { Structure } from '../structure/entities/structure.entity';
 import { HouseholdListing } from '../household-listing/entities/household-listing.entity';
 
@@ -22,11 +24,29 @@ export class DzongkhagService {
   ) {}
 
   async findAll(): Promise<Dzongkhag[]> {
-    return this.dzongkhagRepository.findAll(
-      {
-        include: [{ model: EnumerationArea,include: [{ model: Structure,include: [{ model: HouseholdListing }] }] }],
-      }
-    );
+    return this.dzongkhagRepository.findAll({
+      include: [
+        {
+          model: Town,
+          include: [
+            {
+              model: Lap,
+              include: [
+                {
+                  model: EnumerationArea,
+                  include: [
+                    {
+                      model: Structure,
+                      include: [{ model: HouseholdListing }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
   }
 
   async findOne(id: number): Promise<Dzongkhag> {
@@ -97,7 +117,17 @@ export class DzongkhagService {
     if (includeHierarchy) {
       const dzongkhag = await this.dzongkhagRepository.findOne({
         where: { id: dzongkhagId },
-        include: [{ model: EnumerationArea }],
+        include: [
+          {
+            model: Town,
+            include: [
+              {
+                model: Lap,
+                include: [{ model: EnumerationArea }],
+              },
+            ],
+          },
+        ],
       });
       if (!dzongkhag) {
         throw new NotFoundException(`Dzongkhag with ID ${dzongkhagId} not found`);

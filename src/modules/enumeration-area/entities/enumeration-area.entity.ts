@@ -8,6 +8,7 @@ import {
   BelongsTo,
 } from 'sequelize-typescript';
 import { Dzongkhag } from '../../dzongkhag/entities/dzongkhag.entity';
+import { Lap } from '../../lap/entities/lap.entity';
 import { EnumerationAreaStatus } from '../enums/enumeration-area-status.enum';
 import { Structure } from 'src/modules/structure/entities/structure.entity';
 
@@ -40,12 +41,28 @@ export class EnumerationArea extends Model {
   })
   areaCode: string;
 
+  @Column({
+    type: DataType.STRING,
+    allowNull: true,
+  })
+  fullEaCode: string;
+
   @ForeignKey(() => Dzongkhag)
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
   dzongkhagId: number;
+
+  @ForeignKey(() => Lap)
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: true,
+  })
+  lapId: number;
+
+  @BelongsTo(() => Lap)
+  lap: Lap;
 
   @Column({
     type: DataType.ENUM(...Object.values(EnumerationAreaStatus)),

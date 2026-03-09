@@ -58,6 +58,18 @@ export class EnumerationAreaController {
     return this.enumerationAreaService.updateStatus(id, dto.status);
   }
 
+  @Patch(':id/geom')
+  updateGeom(
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.enumerationAreaService.updateGeom(id);
+  }
+
+  @Get('geom/update/all')
+  updateAllGeom() {
+    return this.enumerationAreaService.updateAllGeom();
+  }
+
   @Post(':id/complete')
   complete(@Param('id', ParseIntPipe) id: number) {
     return this.enumerationAreaService.complete(id);

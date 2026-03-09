@@ -12,6 +12,10 @@ export class CreateEnumerationAreaDto {
   @IsNumber()
   dzongkhagId?: number;
 
+  @IsOptional()
+  @IsNumber()
+  lapId?: number;
+
   @IsNotEmpty()
   @IsString()
   name: string;
@@ -23,6 +27,10 @@ export class CreateEnumerationAreaDto {
   @IsNotEmpty()
   @IsString()
   areaCode: string;
+
+  @IsOptional()
+  @IsString()
+  fullEaCode?: string;
 
   @IsOptional()
   @IsEnum(EnumerationAreaStatus)

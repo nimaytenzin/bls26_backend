@@ -7,6 +7,8 @@ import {
   TEST,
 } from 'src/constants/constants';
 import { Dzongkhag } from 'src/modules/dzongkhag/entities/dzongkhag.entity';
+import { Town } from 'src/modules/town/entities/town.entity';
+import { Lap } from 'src/modules/lap/entities/lap.entity';
 import { EnumerationArea } from 'src/modules/enumeration-area/entities/enumeration-area.entity';
 import { User } from 'src/modules/auth/entities/user.entity';
 import { Structure } from 'src/modules/structure/entities/structure.entity';
@@ -60,6 +62,8 @@ export const databaseProviders = [
       sequelize.addModels([
         User,
         Dzongkhag,
+        Town,
+        Lap,
         EnumerationArea,
         Structure,
         HouseholdListing,

@@ -63,6 +63,11 @@ export class AuthService {
         'Account is deactivated. Please contact administrator.',
       );
     }
+    if (loginDto.role && user.role !== loginDto.role) {
+      throw new UnauthorizedException(
+        `Access denied. This login is for ${loginDto.role.toLowerCase()}s only.`,
+      );
+    }
     const isPasswordValid = await bcrypt.compare(
       loginDto.password,
       user.password,

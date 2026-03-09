@@ -4,14 +4,16 @@ import {
   Model,
   Table,
   HasMany,
+  ForeignKey,
+  BelongsTo,
 } from 'sequelize-typescript';
-import { EnumerationArea } from '../../enumeration-area/entities/enumeration-area.entity';
 import { Town } from '../../town/entities/town.entity';
+import { EnumerationArea } from '../../enumeration-area/entities/enumeration-area.entity';
 
 @Table({
   timestamps: false,
 })
-export class Dzongkhag extends Model {
+export class Lap extends Model {
   @Column({
     primaryKey: true,
     autoIncrement: true,
@@ -30,8 +32,15 @@ export class Dzongkhag extends Model {
   })
   areaCode: string;
 
-  @HasMany(() => Town)
-  towns: Town[];
+  @ForeignKey(() => Town)
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: false,
+  })
+  townId: number;
+
+  @BelongsTo(() => Town)
+  town: Town;
 
   @HasMany(() => EnumerationArea)
   enumerationAreas: EnumerationArea[];
