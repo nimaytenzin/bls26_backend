@@ -92,4 +92,9 @@ export class HouseholdListingController {
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.householdListingService.remove(id);
   }
+
+  @Delete('by-ea/:eaId')
+  removeByEa(@Param('eaId', ParseIntPipe) eaId: number) {
+    return this.householdListingService.removeByEa(eaId);
+  }
 }

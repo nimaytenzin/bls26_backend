@@ -92,4 +92,22 @@ export class HouseholdListingService {
     const listing = await this.findOne(id);
     await listing.destroy();
   }
+
+  /**
+   * Delete all household listings for a given Enumeration Area.
+   */
+  async removeByEa(eaId: number): Promise<number> {
+    const structures = await this.structureRepository.findAll({
+      where: { enumerationAreaId: eaId },
+      attributes: ['id'],
+    });
+    const structureIds = structures.map((s) => s.id);
+    if (structureIds.length === 0) {
+      return 0;
+    }
+    const deleted = await this.householdListingRepository.destroy({
+      where: { structureId: { [Op.in]: structureIds } },
+    });
+    return deleted;
+  }
 }
