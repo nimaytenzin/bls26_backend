@@ -10,9 +10,10 @@ export class CreateHouseholdListingDto {
   @IsString()
   householdIdentification: string;
 
+  @IsOptional()
   @IsInt()
   @Min(1)
-  householdSerialNumber: number;
+  householdSerialNumber?: number;
 
   @IsString()
   nameOfHOH: string;

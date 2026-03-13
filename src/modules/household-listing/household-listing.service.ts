@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { Op } from 'sequelize';
+import { Op, fn, col } from 'sequelize';
 import { HouseholdListing } from './entities/household-listing.entity';
 import { CreateHouseholdListingDto } from './dto/create-household-listing.dto';
 import { UpdateHouseholdListingDto } from './dto/update-household-listing.dto';
@@ -24,15 +24,44 @@ export class HouseholdListingService {
   async create(
     createHouseholdListingDto: CreateHouseholdListingDto,
   ): Promise<HouseholdListing> {
-    return this.householdListingRepository.create(
-      instanceToPlain(createHouseholdListingDto) as any,
-    );
+    const payload = instanceToPlain(createHouseholdListingDto) as any;
+    if (!payload.householdSerialNumber) {
+      payload.householdSerialNumber = await this.getNextSerialNumber(payload.structureId);
+    }
+    const maxRetries = 3;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        return await this.householdListingRepository.create(payload);
+      } catch (err) {
+        const isUniqueViolation =
+          err.name === 'SequelizeUniqueConstraintError' ||
+          (err.name === 'SequelizeValidationError' && err.errors?.some((e: any) => e.type === 'unique violation'));
+        if (isUniqueViolation && attempt < maxRetries - 1) {
+          payload.householdSerialNumber = await this.getNextSerialNumber(payload.structureId);
+          continue;
+        }
+        throw err;
+      }
+    }
   }
 
   async bulkCreate(
     dtos: CreateHouseholdListingDto[],
   ): Promise<HouseholdListing[]> {
     const payloads = dtos.map((dto) => instanceToPlain(dto) as any);
+    // Auto-assign serial numbers for entries missing them
+    const structureIds = [...new Set(payloads.filter((p) => !p.householdSerialNumber).map((p) => p.structureId))];
+    const nextSerials = new Map<number, number>();
+    for (const sid of structureIds) {
+      nextSerials.set(sid, await this.getNextSerialNumber(sid));
+    }
+    for (const payload of payloads) {
+      if (!payload.householdSerialNumber) {
+        const next = nextSerials.get(payload.structureId) ?? 1;
+        payload.householdSerialNumber = next;
+        nextSerials.set(payload.structureId, next + 1);
+      }
+    }
     return this.householdListingRepository.bulkCreate(payloads);
   }
 
@@ -59,6 +88,16 @@ export class HouseholdListingService {
 
   async findByStructure(structureId: number): Promise<HouseholdListing[]> {
     return this.findAll({ structureId });
+  }
+
+  private async getNextSerialNumber(structureId: number): Promise<number> {
+    const result = await this.householdListingRepository.findOne({
+      where: { structureId },
+      attributes: [[fn('MAX', col('householdSerialNumber')), 'maxSerial']],
+      raw: true,
+    });
+    const maxSerial = (result as any)?.maxSerial ?? 0;
+    return maxSerial + 1;
   }
 
   async isHouseholdSerialUnique(
